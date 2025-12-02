@@ -6,7 +6,7 @@ services:
     container_name: let-food-into-civic
     restart: unless-stopped
     ports:
-      - "8042:8080"  # Exposed on localhost:8042, nginx will reverse proxy to this
+      - "127.0.0.1:8042:8080"  # Exposed on localhost:8042, nginx will reverse proxy to this
     env_file:
       - .env  # Load secrets from .env file
     environment:
