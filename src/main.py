@@ -249,7 +249,7 @@ def index():
 
 @app.route('/sms-consent', methods=['GET'])
 def sms_consent():
-    """SMS consent disclosure page for toll-free verification."""
+    """SMS consent disclosure page for toll-free verification with CTIA-required disclosures."""
     return '''
     <!DOCTYPE html>
     <html lang="en">
@@ -305,6 +305,24 @@ def sms_consent():
                 margin: 24px 0;
                 border-radius: 0 8px 8px 0;
             }
+            .ctia-disclosure {
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+                padding: 20px;
+                margin: 24px 0;
+                border-radius: 8px;
+            }
+            .ctia-disclosure h3 {
+                color: #92400e;
+                margin-bottom: 12px;
+                font-size: 1rem;
+            }
+            .ctia-disclosure ul {
+                margin-bottom: 0;
+            }
+            .ctia-disclosure li {
+                margin-bottom: 8px;
+            }
             .example {
                 background: #f8f9fa;
                 padding: 12px 16px;
@@ -338,28 +356,41 @@ def sms_consent():
                This is a private, non-commercial service for personal home use.</p>
             
             <div class="highlight">
-                <strong>Consent Process:</strong> Each recipient has provided explicit verbal and 
-                written consent to receive delivery notifications at their registered mobile number.
+                <strong>Consent Process:</strong> By providing your mobile phone number and agreeing 
+                to receive notifications, you consent to receive automated SMS messages about 
+                delivery gate access at the registered address. Consent is not a condition of 
+                any purchase.
+            </div>
+            
+            <div class="ctia-disclosure">
+                <h3>📋 Important Disclosures (CTIA Compliance)</h3>
+                <ul>
+                    <li><strong>Message Frequency:</strong> Message frequency varies based on delivery activity. Expect approximately 10-30 messages per month.</li>
+                    <li><strong>Message and Data Rates:</strong> Message and data rates may apply. Check with your mobile carrier for details.</li>
+                    <li><strong>Opt-Out:</strong> Reply <strong>STOP</strong> to any message to unsubscribe and stop receiving notifications.</li>
+                    <li><strong>Help:</strong> Reply <strong>HELP</strong> for assistance or contact the household administrator.</li>
+                    <li><strong>Privacy:</strong> Your phone number will not be shared with third parties. See our <a href="https://contrived.com/privacy">Privacy Policy</a> for details.</li>
+                </ul>
             </div>
             
             <h2>Message Content</h2>
             <p>Messages are limited to delivery gate access notifications:</p>
             <div class="example">🍕 Gate unlocked at 2:30 PM! Call from: +1 (555) 123-4567</div>
             
-            <h2>Message Frequency</h2>
+            <h2>Opt-Out Instructions</h2>
+            <p>You may opt out at any time by:</p>
             <ul>
-                <li>Messages are sent only when the gate is accessed</li>
-                <li>Typical volume: 10-30 messages per month</li>
-                <li>No marketing or promotional content</li>
+                <li>Replying <strong>STOP</strong> to any message</li>
+                <li>Contacting the household administrator to have your number removed</li>
             </ul>
+            <p>After opting out, you will receive a confirmation message and no further notifications.</p>
             
-            <h2>Opt-Out</h2>
-            <p>Recipients may opt out at any time by contacting the household administrator 
-               to have their number removed from the notification list. Reply STOP to any 
-               message to unsubscribe.</p>
-            
-            <h2>Contact</h2>
-            <p>For questions about this service, contact the household administrator directly.</p>
+            <h2>Contact &amp; Support</h2>
+            <p>For questions about this service:</p>
+            <ul>
+                <li>Reply <strong>HELP</strong> to any message</li>
+                <li>Email: sean.reardon@contrived.com</li>
+            </ul>
             
             <div class="footer">
                 <p>Last updated: December 2024</p>
