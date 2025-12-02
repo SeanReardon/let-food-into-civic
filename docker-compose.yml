@@ -5,10 +5,24 @@ services:
     image: ghcr.io/seanreardon/let-food-into-civic:latest
     container_name: let-food-into-civic
     restart: unless-stopped
+    ports:
+      - "8042:8080"  # Exposed on localhost:8042, nginx will reverse proxy to this
+    env_file:
+      - .env  # Load secrets from .env file
     environment:
       - LOG_LEVEL=INFO
-    # volumes:
-    #   - ./data:/app/data  # Uncomment if persistent data is needed
-    # ports:
-    #   - "8000:8000"  # Uncomment if exposing a port
-
+      # DTMF tone configuration
+      - UNLOCK_DIGIT=5
+      - TONE_DURATION_REPEATS=4   # 4 x 250ms = ~1 second of tone
+      - PAUSE_DURATION=0.2        # 0.2 second pause between tones
+      - ITERATIONS=6              # Repeat 6 times
+      # Telnyx configuration (secrets in .env file):
+      # - LET-FOOD-INTO-CIVIC-KEY=your_api_key
+      # - TELNYX_PHONE_NUMBER=+1XXXXXXXXXX
+      # - NOTIFY_NUMBERS=+1XXXXXXXXXX,+1YYYYYYYYYY
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
