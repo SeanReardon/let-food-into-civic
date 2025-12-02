@@ -42,8 +42,8 @@ TELNYX_API_KEY = os.getenv("TELNYX_LET_FOOD_INTO_CIVIC_KEY", "")
 
 # DTMF tone configuration
 UNLOCK_DIGIT = os.getenv("UNLOCK_DIGIT", "5")
-TONE_DURATION_REPEATS = int(os.getenv("TONE_DURATION_REPEATS", "4"))  # ~1 second (4 x 250ms)
-PAUSE_DURATION = float(os.getenv("PAUSE_DURATION", "0.2"))  # seconds
+TONE_DURATION_REPEATS = int(os.getenv("TONE_DURATION_REPEATS", "8"))  # ~2 seconds (8 x 250ms)
+PAUSE_DURATION = float(os.getenv("PAUSE_DURATION", "0.5"))  # seconds
 ITERATIONS = int(os.getenv("ITERATIONS", "6"))
 
 # SMS notification configuration
