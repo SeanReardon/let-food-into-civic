@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  let-food-into-civic:
+    image: ghcr.io/seanreardon/let-food-into-civic:latest
+    container_name: let-food-into-civic
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=INFO
+    # volumes:
+    #   - ./data:/app/data  # Uncomment if persistent data is needed
+    # ports:
+    #   - "8000:8000"  # Uncomment if exposing a port
+
