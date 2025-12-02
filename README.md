@@ -66,12 +66,63 @@ Automatic call box unlocker for food deliveries! When your apartment call box ri
 3. Under **Voice Settings**, select your TeXML Application
 4. Save changes
 
-### 6. Enable Messaging on Your Number
+### 6. Set Up SMS Messaging (Toll-Free Verification)
 
-1. Go to **Numbers → My Numbers**
-2. Click on your phone number
-3. Under **Messaging Settings**, enable messaging
-4. This allows the number to send SMS notifications
+For SMS notifications to work in the US, you need a **verified toll-free number**. Regular local numbers are blocked from sending SMS without 10DLC registration (which doesn't support sole proprietors).
+
+#### Buy a Toll-Free Number
+
+1. Go to **Numbers → Buy Numbers**
+2. Search for a toll-free number (888, 877, etc.) - they're cheap (~$2/month)
+3. Purchase the number
+
+#### Create a Messaging Profile
+
+1. Go to **Messaging → Programmable Messaging**
+2. Create a new **Messaging Profile** (e.g., "let-food-into-civic")
+3. Assign your toll-free number to this profile
+
+#### Submit Toll-Free Verification
+
+1. Go to **Messaging → Compliance → Toll Free Verification**
+2. Click **Submit Request** and fill out the form:
+
+| Field | Recommended Value |
+|-------|-------------------|
+| **Expected volume** | 1,000 |
+| **Use-case** | Courier Services & Deliveries |
+| **Summarize use-case** | Personal home automation notifications for apartment building gate access when deliveries arrive |
+| **Message content** | 🍕 Gate unlocked at 2:30 PM! Call from: +15551234567 |
+| **Opt-In workflow** | Recipients are household family members who have explicitly consented to receive delivery notifications for our home address |
+| **Additional details** | Personal/family use only. Two recipients (myself and spouse) receive notifications when our apartment call box is triggered for package deliveries. Low volume, non-commercial. |
+| **Opt-In workflow image URL** | https://your-domain.com/static/optin-workflow.png |
+| **Opt-in keywords** | START |
+| **Opt-in message** | You've been added to gate unlock notifications. Reply STOP to unsubscribe. |
+| **Help message** | This service sends notifications when your apartment gate is unlocked for deliveries. Reply STOP to unsubscribe. |
+| **Privacy policy URL** | https://your-website.com/privacy |
+| **Age-Gated Content** | No |
+
+3. Click **Create** and wait 1-7 business days for approval
+
+#### CTIA Compliance (Important!)
+
+Your opt-in page **must** include these CTIA-required disclosures:
+- ✅ Message frequency disclosure ("Message frequency varies")
+- ✅ "Message and data rates may apply"
+- ✅ How to opt out: "Reply STOP to unsubscribe"
+- ✅ How to get help: "Reply HELP for assistance"
+- ✅ Link to privacy policy
+
+This service hosts a compliant consent page at `/sms-consent` - use a screenshot of it for the "Opt-In workflow image URL".
+
+#### Your Number Setup
+
+You'll have **two numbers** with different purposes:
+
+| Number Type | Purpose |
+|-------------|---------|
+| **Local Number** (e.g., +1-214-xxx-xxxx) | Receives calls from call box → plays DTMF to unlock gate |
+| **Toll-Free Number** (e.g., +1-888-xxx-xxxx) | Sends SMS notifications to you (verified for messaging) |
 
 ### 7. Configure Your Environment
 
@@ -189,20 +240,22 @@ You should get back TeXML that looks like:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Play digits="5555"/>
-    <Pause length="0.2"/>
-    <Play digits="5555"/>
-    <Pause length="0.2"/>
-    <Play digits="5555"/>
-    <Pause length="0.2"/>
-    <Play digits="5555"/>
-    <Pause length="0.2"/>
-    <Play digits="5555"/>
-    <Pause length="0.2"/>
-    <Play digits="5555"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
+    <Pause length="0.5"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
+    <Pause length="0.5"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
+    <Pause length="0.5"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
+    <Pause length="0.5"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
+    <Pause length="0.5"/>
+    <Play>https://your-domain.com/static/dtmf5-2sec.wav</Play>
     <Hangup/>
 </Response>
 ```
+
+> **Note:** We use a pre-recorded 2-second DTMF audio file instead of `<Play digits>` because TwiML/TeXML's digit playback only supports short ~100ms tones, not sustained "press and hold" tones that some call boxes require.
 
 ### Test with a Real Call
 
@@ -276,10 +329,24 @@ With Telnyx:
 - Check container logs: `docker logs let-food-into-civic`
 
 ### SMS not sending
-- Verify `TELNYX_PHONE_NUMBER` is set correctly
+- Verify `TELNYX_PHONE_NUMBER` is set to your **toll-free number** (not local)
+- Check your toll-free verification status in Telnyx Portal → Messaging → Compliance
+- Common error codes:
+  - **40329**: Toll-free number not verified for messaging yet
+  - **40010**: Number not enabled for messaging
 - Make sure messaging is enabled on your Telnyx number
 - Check that `NOTIFY_NUMBERS` contains valid E.164 format numbers
 - Test with: `curl -X POST http://localhost:8042/admin/test-sms`
+
+### Toll-Free Verification rejected
+- **"website must be public"**: Make sure your consent page URL is publicly accessible
+- **"opt in missing ctia disclosures"**: Your consent page needs:
+  - Message frequency info
+  - "Message and data rates may apply"
+  - STOP to unsubscribe
+  - HELP for assistance
+  - Privacy policy link
+- Update your consent page and resubmit the verification request
 
 ### Gate not unlocking
 - Try adjusting `TONE_DURATION_REPEATS` (some systems need longer tones)
