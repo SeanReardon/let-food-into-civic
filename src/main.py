@@ -109,28 +109,31 @@ def send_notifications_async(caller: str):
 # TeXML Generation
 # =============================================================================
 
+# URL to the 2-second DTMF tone audio file
+DTMF_AUDIO_URL = os.getenv(
+    "DTMF_AUDIO_URL",
+    "https://let-food-into-civic.contrived.com/static/dtmf5-2sec.wav"
+)
+
 def generate_unlock_texml() -> str:
     """
     Generate TeXML/TwiML response that plays DTMF tones to unlock the gate.
     
     The call box expects:
-    - Tone "5" for ~1 second
-    - Pause for 0.2 seconds
+    - Tone "5" held for ~2 seconds
+    - Pause for 0.5 seconds
     - Repeat 6 times
     
-    DTMF tones in TwiML/TeXML are ~250ms each, so we repeat the digit
-    to achieve approximately 1 second of tone.
+    We use a pre-recorded DTMF audio file because TwiML's <Play digits>
+    only supports short (~100ms) tones. The audio file contains a 2-second
+    DTMF "5" tone (770 Hz + 1336 Hz).
     """
-    # Build the digit string for ~1 second of tone
-    # Each digit is ~250ms, so 4 digits ≈ 1 second
-    digits = UNLOCK_DIGIT * TONE_DURATION_REPEATS
-    
-    # Build the XML response
+    # Build the XML response using audio file for proper duration
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<Response>']
     
     for i in range(ITERATIONS):
-        # Play the DTMF tone(s)
-        xml_parts.append(f'    <Play digits="{digits}"/>')
+        # Play the DTMF tone audio file
+        xml_parts.append(f'    <Play>{DTMF_AUDIO_URL}</Play>')
         
         # Add pause between iterations (skip pause after last iteration)
         if i < ITERATIONS - 1:
