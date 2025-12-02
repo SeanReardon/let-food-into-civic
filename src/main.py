@@ -38,7 +38,7 @@ app = Flask(__name__)
 # =============================================================================
 
 # Telnyx API Key
-TELNYX_API_KEY = os.getenv("LET-FOOD-INTO-CIVIC-KEY", "")
+TELNYX_API_KEY = os.getenv("TELNYX_LET_FOOD_INTO_CIVIC_KEY", "")
 
 # DTMF tone configuration
 UNLOCK_DIGIT = os.getenv("UNLOCK_DIGIT", "5")

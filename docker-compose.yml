@@ -17,7 +17,7 @@ services:
       - PAUSE_DURATION=0.2        # 0.2 second pause between tones
       - ITERATIONS=6              # Repeat 6 times
       # Telnyx configuration (secrets in .env file):
-      # - LET-FOOD-INTO-CIVIC-KEY=your_api_key
+      # - TELNYX_LET_FOOD_INTO_CIVIC_KEY=your_api_key
       # - TELNYX_PHONE_NUMBER=+1XXXXXXXXXX
       # - NOTIFY_NUMBERS=+1XXXXXXXXXX,+1YYYYYYYYYY
     healthcheck:

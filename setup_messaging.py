@@ -10,11 +10,11 @@ import telnyx
 
 load_dotenv()
 
-api_key = os.getenv("LET-FOOD-INTO-CIVIC-KEY")
+api_key = os.getenv("TELNYX_LET_FOOD_INTO_CIVIC_KEY")
 phone_number = os.getenv("TELNYX_PHONE_NUMBER")
 
 if not api_key:
-    print("❌ LET-FOOD-INTO-CIVIC-KEY not set")
+    print("❌ TELNYX_LET_FOOD_INTO_CIVIC_KEY not set")
     exit(1)
 
 if not phone_number:

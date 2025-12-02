@@ -12,7 +12,7 @@ import telnyx
 load_dotenv()
 
 # Get config
-api_key = os.getenv("LET-FOOD-INTO-CIVIC-KEY")
+api_key = os.getenv("TELNYX_LET_FOOD_INTO_CIVIC_KEY")
 from_number = os.getenv("TELNYX_PHONE_NUMBER")
 notify_numbers = [n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()]
 
@@ -21,7 +21,7 @@ print("=" * 40)
 
 # Check configuration
 if not api_key:
-    print("❌ LET-FOOD-INTO-CIVIC-KEY not set in .env")
+    print("❌ TELNYX_LET_FOOD_INTO_CIVIC_KEY not set in .env")
     exit(1)
 else:
     print(f"✅ API Key: {api_key[:10]}...")

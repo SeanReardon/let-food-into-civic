@@ -85,7 +85,7 @@ Edit `.env` with your values:
 
 ```bash
 # Your Telnyx API key
-LET-FOOD-INTO-CIVIC-KEY=KEY017xxxxxxxxxxxxxxxxxxxxx
+TELNYX_LET_FOOD_INTO_CIVIC_KEY=KEY017xxxxxxxxxxxxxxxxxxxxx
 
 # Your Telnyx phone number (E.164 format)
 TELNYX_PHONE_NUMBER=+14155551234
@@ -125,7 +125,7 @@ Give your apartment management the new Telnyx phone number!
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LET-FOOD-INTO-CIVIC-KEY` | Yes | Your Telnyx API key |
+| `TELNYX_LET_FOOD_INTO_CIVIC_KEY` | Yes | Your Telnyx API key |
 | `TELNYX_PHONE_NUMBER` | Yes | Your Telnyx phone number (E.164 format) |
 | `NOTIFY_NUMBERS` | No | Comma-separated phone numbers for SMS notifications |
 | `UNLOCK_DIGIT` | No | DTMF digit to play (default: `5`) |
