@@ -189,14 +189,342 @@ def handle_incoming_call():
 
 @app.route('/', methods=['GET'])
 def index():
-    """Simple landing page."""
+    """Public landing page for Telnyx verification."""
+    return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Let Food Into Civic — Home Delivery Notifications by Contrived LLC</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            :root {
+                --bg: #fafaf9;
+                --bg-alt: #ffffff;
+                --text: #1c1917;
+                --text-secondary: #57534e;
+                --text-muted: #a8a29e;
+                --accent: #b45309;
+                --accent-light: #fef3c7;
+                --border: #e7e5e4;
+                --link: #0369a1;
+            }
+            
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                min-height: 100vh;
+                line-height: 1.7;
+                font-size: 16px;
+            }
+            
+            .container {
+                max-width: 680px;
+                margin: 0 auto;
+                padding: 80px 24px;
+            }
+            
+            header {
+                text-align: center;
+                margin-bottom: 64px;
+                padding-bottom: 48px;
+                border-bottom: 1px solid var(--border);
+            }
+            
+            .logo {
+                font-size: 2.5rem;
+                margin-bottom: 20px;
+                display: inline-block;
+            }
+            
+            h1 {
+                font-family: 'Source Serif 4', Georgia, serif;
+                font-size: 2.25rem;
+                font-weight: 600;
+                margin-bottom: 12px;
+                letter-spacing: -0.02em;
+                color: var(--text);
+            }
+            
+            .tagline {
+                color: var(--text-secondary);
+                font-size: 1.1rem;
+            }
+            
+            .content {
+                margin-bottom: 48px;
+            }
+            
+            .content h2 {
+                font-family: 'Source Serif 4', Georgia, serif;
+                font-size: 1.5rem;
+                font-weight: 600;
+                margin-bottom: 20px;
+                margin-top: 48px;
+                color: var(--text);
+            }
+            
+            .content h2:first-child {
+                margin-top: 0;
+            }
+            
+            .content p {
+                color: var(--text-secondary);
+                margin-bottom: 20px;
+            }
+            
+            .content ul {
+                color: var(--text-secondary);
+                margin-bottom: 20px;
+                margin-left: 24px;
+            }
+            
+            .content li {
+                margin-bottom: 8px;
+            }
+            
+            .highlight-box {
+                background: var(--accent-light);
+                border-left: 4px solid var(--accent);
+                padding: 20px 24px;
+                margin: 32px 0;
+                border-radius: 0 8px 8px 0;
+            }
+            
+            .highlight-box p {
+                color: var(--text);
+                margin-bottom: 0;
+            }
+            
+            .links-section {
+                background: var(--bg-alt);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 32px;
+                margin: 48px 0;
+            }
+            
+            .links-section h3 {
+                font-family: 'Source Serif 4', Georgia, serif;
+                font-size: 1.1rem;
+                font-weight: 600;
+                margin-bottom: 20px;
+                color: var(--text);
+            }
+            
+            .links-grid {
+                display: grid;
+                gap: 16px;
+            }
+            
+            .links-grid a {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 16px 20px;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                color: var(--text);
+                text-decoration: none;
+                transition: all 0.2s;
+            }
+            
+            .links-grid a:hover {
+                border-color: var(--accent);
+                background: var(--accent-light);
+            }
+            
+            .links-grid a svg {
+                width: 24px;
+                height: 24px;
+                color: var(--accent);
+                flex-shrink: 0;
+            }
+            
+            .links-grid .link-content {
+                flex: 1;
+            }
+            
+            .links-grid .link-title {
+                font-weight: 600;
+                margin-bottom: 2px;
+            }
+            
+            .links-grid .link-desc {
+                font-size: 0.875rem;
+                color: var(--text-muted);
+            }
+            
+            footer {
+                text-align: center;
+                margin-top: 64px;
+                padding-top: 32px;
+                border-top: 1px solid var(--border);
+                color: var(--text-muted);
+                font-size: 0.875rem;
+            }
+            
+            footer a {
+                color: var(--text-secondary);
+                text-decoration: none;
+            }
+            
+            footer a:hover {
+                color: var(--accent);
+            }
+            
+            footer p {
+                margin-bottom: 8px;
+            }
+            
+            @media (max-width: 600px) {
+                .container {
+                    padding: 48px 20px;
+                }
+                h1 {
+                    font-size: 1.75rem;
+                }
+                .content h2 {
+                    font-size: 1.25rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <div class="logo">🏠</div>
+                <h1>Let Food Into Civic</h1>
+                <p class="tagline">Home Delivery Notification Service</p>
+            </header>
+            
+            <div class="content">
+                <h2>About This Service</h2>
+                <p>
+                    Welcome to <strong>Let Food Into Civic</strong>, a home notification service 
+                    designed and operated by Contrived LLC. This service provides real-time SMS 
+                    notifications to household members when deliveries arrive at their residence.
+                </p>
+                <p>
+                    In today's busy world, keeping track of package and food deliveries can be 
+                    challenging. Whether you're working from home, managing a household, or simply 
+                    want to know when your order has arrived, timely notifications help ensure you 
+                    never miss an important delivery.
+                </p>
+                
+                <h2>Who We Serve</h2>
+                <p>
+                    This is a <strong>private, non-commercial service</strong> created specifically 
+                    for personal household use. We provide delivery notifications exclusively to 
+                    household members who have explicitly opted in to receive text message alerts. 
+                    Our service is not available to the general public and operates solely for 
+                    the benefit of registered family members at a single residential address.
+                </p>
+                
+                <div class="highlight-box">
+                    <p>
+                        <strong>Privacy First:</strong> We take your privacy seriously. Only household 
+                        members who have provided explicit consent receive notifications. Your phone 
+                        number and personal information are never shared with third parties or used 
+                        for marketing purposes.
+                    </p>
+                </div>
+                
+                <h2>How Notifications Work</h2>
+                <p>
+                    When a delivery arrives at the registered address, our system automatically 
+                    sends an SMS notification to all opted-in household members. These notifications 
+                    include the time of the delivery event so you always know exactly when something 
+                    has arrived.
+                </p>
+                <p>
+                    Message frequency varies based on delivery activity at your residence. Most 
+                    households can expect to receive between 10-30 messages per month, though this 
+                    depends entirely on how many deliveries you receive. Standard message and data 
+                    rates from your mobile carrier may apply.
+                </p>
+                
+                <h2>Your Rights &amp; Choices</h2>
+                <p>
+                    We believe in giving you complete control over your notification preferences. 
+                    As a registered user of this service, you have several important rights:
+                </p>
+                <ul>
+                    <li><strong>Opt-Out Anytime:</strong> Simply reply STOP to any message to immediately unsubscribe from all future notifications.</li>
+                    <li><strong>Get Help:</strong> Reply HELP to any message for assistance or contact information.</li>
+                    <li><strong>Transparency:</strong> We clearly disclose how your information is used in our privacy policy.</li>
+                    <li><strong>No Obligations:</strong> Your consent to receive messages is not a condition of any purchase or service.</li>
+                </ul>
+                
+                <h2>About Contrived LLC</h2>
+                <p>
+                    This service is owned and operated by <strong>Contrived LLC</strong>, a Texas-based 
+                    company focused on building practical technology solutions for everyday life. We 
+                    created Let Food Into Civic to solve a simple problem: making sure busy families 
+                    never miss an important delivery.
+                </p>
+                <p>
+                    For any questions about this service, our company, or how we handle your information, 
+                    please don't hesitate to reach out to us at sean.reardon@contrived.com.
+                </p>
+            </div>
+            
+            <div class="links-section">
+                <h3>Important Information</h3>
+                <div class="links-grid">
+                    <a href="https://let-food-into-civic.contrived.com/sms-consent">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        <div class="link-content">
+                            <div class="link-title">SMS Consent &amp; Disclosures</div>
+                            <div class="link-desc">View our complete SMS messaging terms, CTIA disclosures, and opt-in information</div>
+                        </div>
+                    </a>
+                    <a href="https://contrived.com/policy">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        <div class="link-content">
+                            <div class="link-title">Privacy Policy</div>
+                            <div class="link-desc">Learn how we collect, use, and protect your personal information</div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            
+            <footer>
+                <p>&copy; 2024 <a href="https://contrived.com">Contrived LLC</a>. All rights reserved.</p>
+                <p>A home automation service for private, residential use.</p>
+                <p style="margin-top: 16px;">
+                    <a href="https://contrived.com/policy">Privacy Policy</a> · 
+                    <a href="https://let-food-into-civic.contrived.com/sms-consent">SMS Terms</a> · 
+                    <a href="mailto:sean.reardon@contrived.com">Contact Us</a>
+                </p>
+            </footer>
+        </div>
+    </body>
+    </html>
+    '''
+
+
+@app.route('/status', methods=['GET'])
+def status():
+    """Internal status page showing configuration."""
     notify_status = f"✅ {len(NOTIFY_NUMBERS)} number(s)" if NOTIFY_NUMBERS else "❌ Not configured"
     telnyx_status = "✅ Configured" if TELNYX_API_KEY else "❌ Not configured"
     
     return f'''
     <html>
     <head>
-        <title>Let Food Into Civic</title>
+        <title>Let Food Into Civic - Status</title>
         <style>
             body {{
                 font-family: system-ui, -apple-system, sans-serif;
