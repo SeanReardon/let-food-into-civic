@@ -67,32 +67,42 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     
     Runs in a background thread to not block the webhook response.
     """
+    logger.info(f"📱 SMS notification function called for caller: {caller} at {timestamp}")
+    
     if not NOTIFY_NUMBERS:
-        logger.warning("No notification numbers configured (NOTIFY_NUMBERS is empty)")
+        logger.warning("⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)")
         return
     
     if not TELNYX_PHONE_NUMBER:
-        logger.warning("No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)")
+        logger.warning("⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)")
         return
     
     if not telnyx_client:
-        logger.warning("Telnyx client not initialized (API key missing)")
+        logger.warning("⚠️  Telnyx client not initialized (API key missing)")
         return
     
-    time_str = timestamp.strftime("%I:%M %p")
-    message = f"🍕 Gate unlocked at {time_str}! Call from: {caller}"
+    message = "the civic callbox was answered and I did 5s, <3 lfic."
+    logger.info(f"📝 SMS message: {message}")
+    logger.info(f"📋 Sending to {len(NOTIFY_NUMBERS)} recipient(s): {NOTIFY_NUMBERS}")
+    
+    success_count = 0
+    failure_count = 0
     
     for phone_number in NOTIFY_NUMBERS:
         try:
-            logger.info(f"Sending SMS notification to {phone_number}")
+            logger.info(f"📤 Attempting to send SMS to {phone_number}...")
             telnyx_client.messages.send(
                 from_=TELNYX_PHONE_NUMBER,
                 to=phone_number,
                 text=message,
             )
-            logger.info(f"✅ SMS sent to {phone_number}")
+            logger.info(f"✅ SMS successfully sent to {phone_number}")
+            success_count += 1
         except Exception as e:
-            logger.error(f"❌ Failed to send SMS to {phone_number}: {e}")
+            logger.error(f"❌ Failed to send SMS to {phone_number}: {e}", exc_info=True)
+            failure_count += 1
+    
+    logger.info(f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed out of {len(NOTIFY_NUMBERS)} total")
 
 
 def send_notifications_async(caller: str):
@@ -170,19 +180,28 @@ def handle_incoming_call():
     We respond with TeXML instructions to play DTMF tones,
     and send SMS notifications.
     """
-    # Log the incoming call
+    # Log the incoming call with full details
     caller = request.values.get('From', request.values.get('from', 'unknown'))
     to_number = request.values.get('To', request.values.get('to', 'unknown'))
+    call_id = request.values.get('CallSid', request.values.get('call_sid', 'unknown'))
     
-    logger.info(f"📞 Incoming call from {caller} to {to_number}")
+    logger.info("=" * 60)
+    logger.info(f"📞 INCOMING CALL RECEIVED")
+    logger.info(f"   Call ID: {call_id}")
+    logger.info(f"   From: {caller}")
+    logger.info(f"   To: {to_number}")
+    logger.info(f"   Timestamp: {datetime.now().isoformat()}")
     logger.info(f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations")
     
     # Send SMS notifications asynchronously
+    logger.info(f"📱 Initiating SMS notification to {len(NOTIFY_NUMBERS)} recipient(s)")
     send_notifications_async(caller)
     
     # Generate and return the TeXML response
     texml = generate_unlock_texml()
     logger.debug(f"Response TeXML:\n{texml}")
+    logger.info(f"✅ TeXML response generated and sent")
+    logger.info("=" * 60)
     
     return Response(texml, mimetype='application/xml')
 
