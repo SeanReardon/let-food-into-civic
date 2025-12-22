@@ -173,17 +173,50 @@ def audit_log_opt_in_event(phone_number, action, source, timestamp):
 
 # Initialize opt-ins for configured numbers (auto-opt-in for initial setup)
 def initialize_opt_ins():
-    """Auto-opt-in numbers from NOTIFY_NUMBERS if they're not already tracked."""
+    """
+    Auto-opt-in numbers from NOTIFY_NUMBERS if they're not already tracked.
+    Respects existing opt-out status - will NOT re-opt-in numbers that have opted out.
+    """
     opt_ins = load_opt_ins()
     updated = False
     
     for phone_number in NOTIFY_NUMBERS:
+        # Only opt-in if not in the system at all (not if they've opted out)
         if phone_number not in opt_ins:
             opt_in(phone_number, source="initial_config")
             updated = True
+            # Send welcome message for new opt-ins
+            send_welcome_message(phone_number)
+            logger.info(f"📋 Auto-opted-in {phone_number} (new number in NOTIFY_NUMBERS)")
+        elif opt_ins[phone_number].get("status") == "opted_out":
+            logger.info(f"⚠️  {phone_number} is in NOTIFY_NUMBERS but is opted out - respecting opt-out status")
+        elif opt_ins[phone_number].get("status") == "opted_in":
+            logger.debug(f"✅ {phone_number} already opted in")
     
     if updated:
         logger.info("📋 Initialized opt-ins for configured notification numbers")
+
+
+def send_welcome_message(phone_number):
+    """Send a welcome/opt-in confirmation message to a newly opted-in number."""
+    if not telnyx_client or not TELNYX_PHONE_NUMBER:
+        return
+    
+    welcome_text = (
+        "Welcome to Let Food Into Civic gate unlock notifications! "
+        "You'll receive alerts when deliveries arrive. "
+        "Reply STOP to unsubscribe, HELP for assistance."
+    )
+    
+    try:
+        telnyx_client.messages.send(
+            from_=TELNYX_PHONE_NUMBER,
+            to=phone_number,
+            text=welcome_text,
+        )
+        logger.info(f"📧 Welcome message sent to {phone_number}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send welcome message to {phone_number}: {e}")
 
 
 # Initialize on startup
@@ -223,9 +256,16 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     failure_count = 0
     
     for phone_number in NOTIFY_NUMBERS:
-        # Check opt-in status before sending
-        if not is_opted_in(phone_number):
-            logger.warning(f"⚠️  Skipping SMS to {phone_number} - not opted in")
+        # Always check durable opt-in/opt-out record before sending
+        # This respects opt-out status even if number is in NOTIFY_NUMBERS
+        opt_ins = load_opt_ins()
+        phone_status = opt_ins.get(phone_number, {}).get("status")
+        
+        if phone_status != "opted_in":
+            if phone_status == "opted_out":
+                logger.warning(f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)")
+            else:
+                logger.warning(f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})")
             failure_count += 1
             continue
         
