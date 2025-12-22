@@ -9,11 +9,13 @@ Features:
 - Sends SMS notifications when gate is unlocked
 """
 
+import json
 import logging
 import os
 import sys
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, Response, request, jsonify
@@ -22,11 +24,29 @@ import telnyx
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
+# Data directory paths
+DATA_DIR = Path("/app/data")
+LOGS_DIR = DATA_DIR / "logs"
+OPT_IN_FLOW_DIR = DATA_DIR / "opt-in-flow"
+
+# Create directories if they don't exist
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+OPT_IN_FLOW_DIR.mkdir(parents=True, exist_ok=True)
+
+# Configure logging with both console and file handlers
+log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+handlers = [logging.StreamHandler(sys.stdout)]
+
+# Add file handler for persistent logs
+log_file = LOGS_DIR / "app.log"
+file_handler = logging.FileHandler(log_file)
+file_handler.setFormatter(logging.Formatter(log_format))
+handlers.append(file_handler)
+
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    format=log_format,
+    handlers=handlers,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +75,120 @@ TELNYX_PHONE_NUMBER = os.getenv("TELNYX_PHONE_NUMBER", "")
 
 # Initialize Telnyx client
 telnyx_client = telnyx.Telnyx(api_key=TELNYX_API_KEY) if TELNYX_API_KEY else None
+
+# Opt-in tracking file
+OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
+
+
+# =============================================================================
+# Opt-In/Opt-Out Management
+# =============================================================================
+
+def load_opt_ins():
+    """Load opt-in status from file."""
+    if not OPT_IN_FILE.exists():
+        return {}
+    try:
+        with open(OPT_IN_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load opt-ins: {e}")
+        return {}
+
+
+def save_opt_ins(opt_ins):
+    """Save opt-in status to file."""
+    try:
+        with open(OPT_IN_FILE, 'w') as f:
+            json.dump(opt_ins, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save opt-ins: {e}")
+
+
+def is_opted_in(phone_number):
+    """Check if a phone number has opted in."""
+    opt_ins = load_opt_ins()
+    return opt_ins.get(phone_number, {}).get("status") == "opted_in"
+
+
+def opt_in(phone_number, source="manual"):
+    """Record an opt-in event."""
+    opt_ins = load_opt_ins()
+    timestamp = datetime.now().isoformat()
+    
+    opt_ins[phone_number] = {
+        "status": "opted_in",
+        "opted_in_at": timestamp,
+        "source": source,
+    }
+    
+    save_opt_ins(opt_ins)
+    
+    # Audit log
+    audit_log_opt_in_event(phone_number, "opted_in", source, timestamp)
+    
+    logger.info(f"✅ {phone_number} opted in (source: {source})")
+
+
+def opt_out(phone_number, source="manual"):
+    """Record an opt-out event."""
+    opt_ins = load_opt_ins()
+    timestamp = datetime.now().isoformat()
+    
+    # Preserve original opt-in timestamp if it exists
+    original_opt_in = opt_ins.get(phone_number, {}).get("opted_in_at")
+    
+    opt_ins[phone_number] = {
+        "status": "opted_out",
+        "opted_out_at": timestamp,
+        "opted_in_at": original_opt_in,  # Preserve history
+        "source": source,
+    }
+    
+    save_opt_ins(opt_ins)
+    
+    # Audit log
+    audit_log_opt_in_event(phone_number, "opted_out", source, timestamp)
+    
+    logger.info(f"🛑 {phone_number} opted out (source: {source})")
+
+
+def audit_log_opt_in_event(phone_number, action, source, timestamp):
+    """Write audit log entry for opt-in/opt-out events."""
+    audit_file = OPT_IN_FLOW_DIR / f"audit-{datetime.now().strftime('%Y-%m')}.log"
+    
+    entry = {
+        "timestamp": timestamp,
+        "phone_number": phone_number,
+        "action": action,
+        "source": source,
+    }
+    
+    try:
+        with open(audit_file, 'a') as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.error(f"Failed to write audit log: {e}")
+
+
+# Initialize opt-ins for configured numbers (auto-opt-in for initial setup)
+def initialize_opt_ins():
+    """Auto-opt-in numbers from NOTIFY_NUMBERS if they're not already tracked."""
+    opt_ins = load_opt_ins()
+    updated = False
+    
+    for phone_number in NOTIFY_NUMBERS:
+        if phone_number not in opt_ins:
+            opt_in(phone_number, source="initial_config")
+            updated = True
+    
+    if updated:
+        logger.info("📋 Initialized opt-ins for configured notification numbers")
+
+
+# Initialize on startup
+if NOTIFY_NUMBERS:
+    initialize_opt_ins()
 
 
 # =============================================================================
@@ -89,6 +223,12 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     failure_count = 0
     
     for phone_number in NOTIFY_NUMBERS:
+        # Check opt-in status before sending
+        if not is_opted_in(phone_number):
+            logger.warning(f"⚠️  Skipping SMS to {phone_number} - not opted in")
+            failure_count += 1
+            continue
+        
         try:
             logger.info(f"📤 Attempting to send SMS to {phone_number}...")
             telnyx_client.messages.send(
@@ -204,6 +344,80 @@ def handle_incoming_call():
     logger.info("=" * 60)
     
     return Response(texml, mimetype='application/xml')
+
+
+@app.route('/webhook/sms', methods=['POST'])
+def handle_incoming_sms():
+    """
+    Webhook endpoint for incoming SMS messages (STOP, HELP, START).
+    
+    Telnyx will POST to this endpoint when someone replies to our SMS.
+    We handle opt-in/opt-out commands here.
+    """
+    # Get message data from Telnyx webhook
+    data = request.get_json() or request.form.to_dict()
+    
+    # Telnyx webhook format
+    from_number = data.get('data', {}).get('payload', {}).get('from', {})
+    if isinstance(from_number, dict):
+        from_number = from_number.get('phone_number', 'unknown')
+    else:
+        from_number = data.get('from', data.get('From', 'unknown'))
+    
+    to_number = data.get('data', {}).get('payload', {}).get('to', [{}])[0] if isinstance(data.get('data', {}).get('payload', {}).get('to', []), list) else {}
+    if isinstance(to_number, dict):
+        to_number = to_number.get('phone_number', 'unknown')
+    else:
+        to_number = data.get('to', data.get('To', 'unknown'))
+    
+    # Get message text
+    message_text = data.get('data', {}).get('payload', {}).get('text', '')
+    if not message_text:
+        message_text = data.get('text', data.get('Body', '')).strip().upper()
+    
+    logger.info("=" * 60)
+    logger.info(f"📱 INCOMING SMS RECEIVED")
+    logger.info(f"   From: {from_number}")
+    logger.info(f"   To: {to_number}")
+    logger.info(f"   Message: {message_text}")
+    logger.info(f"   Timestamp: {datetime.now().isoformat()}")
+    
+    # Handle commands
+    response_text = None
+    
+    if message_text == "STOP":
+        opt_out(from_number, source="sms_reply")
+        response_text = "You have been unsubscribed from gate unlock notifications. Reply START to resubscribe."
+        logger.info(f"🛑 Processed STOP request from {from_number}")
+    
+    elif message_text == "HELP":
+        response_text = "Let Food Into Civic: Gate unlock notifications. Reply STOP to unsubscribe. For help: sean.reardon@contrived.com"
+        logger.info(f"ℹ️  Processed HELP request from {from_number}")
+    
+    elif message_text in ["START", "YES", "OPTIN", "SUBSCRIBE"]:
+        opt_in(from_number, source="sms_reply")
+        response_text = "You have been subscribed to gate unlock notifications. Reply STOP to unsubscribe."
+        logger.info(f"✅ Processed START/OPT-IN request from {from_number}")
+    
+    else:
+        logger.info(f"❓ Unknown message from {from_number}: {message_text}")
+        response_text = "Unknown command. Reply STOP to unsubscribe, HELP for assistance."
+    
+    # Send response if we have one
+    if response_text and telnyx_client and TELNYX_PHONE_NUMBER:
+        try:
+            telnyx_client.messages.send(
+                from_=TELNYX_PHONE_NUMBER,
+                to=from_number,
+                text=response_text,
+            )
+            logger.info(f"📤 Sent response to {from_number}")
+        except Exception as e:
+            logger.error(f"❌ Failed to send response SMS: {e}", exc_info=True)
+    
+    logger.info("=" * 60)
+    
+    return jsonify({'status': 'processed'}), 200
 
 
 @app.route('/', methods=['GET'])

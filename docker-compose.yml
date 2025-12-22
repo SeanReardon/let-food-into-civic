@@ -7,6 +7,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8042:8080"  # Exposed on localhost:8042, nginx will reverse proxy to this
+    volumes:
+      - ./data/logs:/app/data/logs          # Application logs
+      - ./data/opt-in-flow:/app/data/opt-in-flow  # Opt-in/opt-out audit logs
     env_file:
       - .env  # Load secrets from .env file
     environment:
