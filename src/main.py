@@ -454,7 +454,7 @@ def handle_incoming_call():
     return Response(texml, mimetype='application/xml')
 
 
-@app.route('/webhook/sms', methods=['POST'])
+@app.route('/webhook/sms', methods=['POST', 'GET'])
 def handle_incoming_sms():
     """
     Webhook endpoint for incoming SMS messages (STOP, HELP, START).
@@ -462,8 +462,17 @@ def handle_incoming_sms():
     Telnyx will POST to this endpoint when someone replies to our SMS.
     We handle opt-in/opt-out commands here.
     """
+    # Log all incoming requests for debugging
+    logger.info("=" * 60)
+    logger.info(f"📱 SMS WEBHOOK RECEIVED")
+    logger.info(f"   Method: {request.method}")
+    logger.info(f"   Headers: {dict(request.headers)}")
+    logger.info(f"   JSON: {request.get_json()}")
+    logger.info(f"   Form: {dict(request.form)}")
+    logger.info(f"   Args: {dict(request.args)}")
+    
     # Get message data from Telnyx webhook
-    data = request.get_json() or request.form.to_dict()
+    data = request.get_json() or request.form.to_dict() or request.args.to_dict()
     
     # Telnyx webhook format
     from_number = data.get('data', {}).get('payload', {}).get('from', {})
