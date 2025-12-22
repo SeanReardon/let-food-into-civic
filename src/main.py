@@ -499,7 +499,12 @@ def handle_incoming_sms():
         logger.info(f"🛑 Processed STOP request from {from_number}")
     
     elif message_text == "HELP":
-        response_text = "Let Food Into Civic: Gate unlock notifications. Reply STOP to unsubscribe. For help: sean.reardon@contrived.com"
+        response_text = (
+            "Let Food Into Civic: Automatic gate unlock notifications for deliveries. "
+            "Very low volume - you'll only get notified when someone uses the callbox. "
+            "No action needed - just kick back and enjoy the rare notification! "
+            "Reply STOP to unsubscribe."
+        )
         logger.info(f"ℹ️  Processed HELP request from {from_number}")
     
     elif message_text in ["START", "YES", "OPTIN", "SUBSCRIBE"]:
