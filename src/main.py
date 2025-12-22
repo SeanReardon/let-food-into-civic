@@ -67,11 +67,70 @@ PAUSE_DURATION = float(os.getenv("PAUSE_DURATION", "0.5"))  # seconds
 ITERATIONS = int(os.getenv("ITERATIONS", "6"))
 
 # SMS notification configuration
-# Comma-separated list of phone numbers to notify (E.164 format: +1XXXXXXXXXX)
-NOTIFY_NUMBERS = [n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()]
+# Comma-separated list of phone numbers to notify (accepts various formats, normalized to E.164)
+NOTIFY_NUMBERS_RAW = [n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()]
+
+
+def normalize_phone_number(phone: str) -> str:
+    """
+    Normalize phone number to E.164 format (+1XXXXXXXXXX).
+    
+    Handles various formats:
+    - +12149090499 (already E.164)
+    - (214) 909-0499
+    - 214-909-0499
+    - 2149090499
+    - 12149090499
+    - 1-214-909-0499
+    - etc.
+    
+    Assumes US numbers unless obviously not (starts with + and country code other than 1).
+    """
+    import re
+    
+    # Remove all non-digit characters
+    digits = re.sub(r'\D', '', phone)
+    
+    # Handle empty or invalid
+    if not digits:
+        return phone  # Return original if we can't parse
+    
+    # If it starts with +, check if it's already E.164
+    if phone.startswith('+'):
+        # Extract digits after +
+        digits_after_plus = re.sub(r'\D', '', phone[1:])
+        if len(digits_after_plus) == 11 and digits_after_plus.startswith('1'):
+            return '+' + digits_after_plus
+        elif len(digits_after_plus) == 10:
+            # US number without country code
+            return '+1' + digits_after_plus
+        else:
+            # International number - return as-is
+            return phone
+    
+    # Handle US numbers (10 or 11 digits)
+    if len(digits) == 10:
+        # 10 digits: assume US, add country code
+        return '+1' + digits
+    elif len(digits) == 11 and digits.startswith('1'):
+        # 11 digits starting with 1: US number
+        return '+' + digits
+    elif len(digits) > 11:
+        # More than 11 digits: might be international, return with +
+        return '+' + digits
+    else:
+        # Less than 10 digits: invalid, return original
+        # Note: logger not available yet at module load time, so we'll log later if needed
+        return phone
+
+
+# Normalize all phone numbers to E.164 format
+NOTIFY_NUMBERS = [normalize_phone_number(n) for n in NOTIFY_NUMBERS_RAW]
 
 # Your Telnyx phone number (the one that receives calls and sends SMS)
-TELNYX_PHONE_NUMBER = os.getenv("TELNYX_PHONE_NUMBER", "")
+# Normalize to E.164 format
+TELNYX_PHONE_NUMBER_RAW = os.getenv("TELNYX_PHONE_NUMBER", "")
+TELNYX_PHONE_NUMBER = normalize_phone_number(TELNYX_PHONE_NUMBER_RAW) if TELNYX_PHONE_NUMBER_RAW else ""
 
 # Initialize Telnyx client
 telnyx_client = telnyx.Telnyx(api_key=TELNYX_API_KEY) if TELNYX_API_KEY else None
