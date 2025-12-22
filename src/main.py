@@ -487,10 +487,12 @@ def handle_incoming_sms():
     else:
         to_number = data.get('to', data.get('To', 'unknown'))
     
-    # Get message text
+    # Get message text - always normalize to uppercase for case-insensitive matching
     message_text = data.get('data', {}).get('payload', {}).get('text', '')
     if not message_text:
-        message_text = data.get('text', data.get('Body', '')).strip().upper()
+        message_text = data.get('text', data.get('Body', ''))
+    # Always convert to uppercase for case-insensitive command matching
+    message_text = message_text.strip().upper() if message_text else ''
     
     logger.info("=" * 60)
     logger.info(f"📱 INCOMING SMS RECEIVED")
