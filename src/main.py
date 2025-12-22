@@ -278,6 +278,15 @@ def send_welcome_message(phone_number):
         logger.error(f"❌ Failed to send welcome message to {phone_number}: {e}")
 
 
+# Log normalized phone numbers on startup
+if NOTIFY_NUMBERS_RAW:
+    logger.info(f"📱 Phone number normalization:")
+    for raw, normalized in zip(NOTIFY_NUMBERS_RAW, NOTIFY_NUMBERS):
+        if raw != normalized:
+            logger.info(f"   {raw} → {normalized}")
+        else:
+            logger.debug(f"   {normalized} (already normalized)")
+
 # Initialize on startup
 if NOTIFY_NUMBERS:
     initialize_opt_ins()
