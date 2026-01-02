@@ -69,7 +69,7 @@ if [ "$TMOBILE" = "True" ]; then
       -d '{"phoneNumber": "+12148170664", "campaignId": "4b30019a-e14d-522f-fc8e-8a26e86a7e54"}')
     
     if echo "$RESULT" | grep -q "error"; then
-        echo "  ⚠️  $(echo $RESULT | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get(\"errors\", [{}])[0].get(\"detail\", str(d))[:60])')"
+        echo "  ⚠️  $(echo $RESULT | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("errors", [{}])[0].get("detail", str(d))[:60])')"
     else
         echo "  ✅ Phone number assigned successfully!"
     fi
