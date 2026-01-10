@@ -461,6 +461,9 @@ def handle_incoming_sms():
     
     Telnyx will POST to this endpoint when someone replies to our SMS.
     We handle opt-in/opt-out commands here.
+    
+    NOTE: Telnyx sends webhooks for ALL message events (inbound, outbound, 
+    delivery confirmations, etc.). We only process inbound messages.
     """
     # Log all incoming requests for debugging
     logger.info("=" * 60)
@@ -474,6 +477,23 @@ def handle_incoming_sms():
     # Get message data from Telnyx webhook
     data = request.get_json() or request.form.to_dict() or request.args.to_dict()
     
+    # Check event type and direction - only process inbound messages
+    # Telnyx sends webhooks for: message.received, message.sent, message.finalized, etc.
+    event_type = data.get('data', {}).get('event_type', '')
+    direction = data.get('data', {}).get('payload', {}).get('direction', '')
+    
+    # Skip non-inbound messages (outbound confirmations, delivery receipts, etc.)
+    if direction == 'outbound':
+        logger.info(f"⏭️  Skipping outbound message event (event_type: {event_type}, direction: {direction})")
+        logger.info("=" * 60)
+        return jsonify({'status': 'skipped', 'reason': 'outbound message'}), 200
+    
+    # Also skip if event type is not message.received (delivery confirmations, etc.)
+    if event_type and event_type != 'message.received':
+        logger.info(f"⏭️  Skipping non-received message event (event_type: {event_type})")
+        logger.info("=" * 60)
+        return jsonify({'status': 'skipped', 'reason': f'event_type: {event_type}'}), 200
+    
     # Telnyx webhook format
     from_number = data.get('data', {}).get('payload', {}).get('from', {})
     if isinstance(from_number, dict):
@@ -486,6 +506,12 @@ def handle_incoming_sms():
         to_number = to_number.get('phone_number', 'unknown')
     else:
         to_number = data.get('to', data.get('To', 'unknown'))
+    
+    # Extra safety: skip if from_number is our own Telnyx number (would cause send-to-self error)
+    if from_number == TELNYX_PHONE_NUMBER:
+        logger.info(f"⏭️  Skipping message from our own number ({from_number})")
+        logger.info("=" * 60)
+        return jsonify({'status': 'skipped', 'reason': 'message from self'}), 200
     
     # Get message text - always normalize to uppercase for case-insensitive matching
     message_text = data.get('data', {}).get('payload', {}).get('text', '')
