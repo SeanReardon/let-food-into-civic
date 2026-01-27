@@ -106,6 +106,67 @@
       "priority": 1,
       "passes": true,
       "notes": "This lets local users preview what remote visitors see, and easily switch back. The ?view= parameter overrides is_local_network() for the page display only, not for admin actions. Remote users still can't access /admin/snooze even if they add ?view=local."
+    },
+    {
+      "id": "let-food-into-civic-00008",
+      "title": "Create JSON schema and log file for gate unlock events",
+      "acceptanceCriteria": [
+        "Create schemas/log.schema.json defining the event log structure",
+        "Schema defines an array of event objects with 'timestamp' field (ISO8601 UTC string)",
+        "Create /app/data/events.json log file (empty array if doesn't exist)",
+        "Add load_events() function to read events from file",
+        "Add append_event(timestamp) function to add new event and save",
+        "Events are stored in chronological order"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Keep the schema simple - just timestamp for now. Future events could add caller_id or other metadata. Use /app/data/events.json to persist across container restarts."
+    },
+    {
+      "id": "let-food-into-civic-00009",
+      "title": "Log gate unlock events when voice webhook is triggered",
+      "acceptanceCriteria": [
+        "In handle_incoming_call(), record event timestamp in UTC ISO8601 format",
+        "Call append_event() to persist the event to events.json",
+        "Log entry happens before SMS notifications are sent",
+        "Existing logging behavior unchanged (still logs to app.log)",
+        "Event is recorded regardless of SMS success/failure"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "This captures every gate unlock event for historical analysis. The timestamp should be datetime.utcnow().isoformat() + 'Z' for proper UTC ISO8601."
+    },
+    {
+      "id": "let-food-into-civic-00010",
+      "title": "Add daily histogram chart showing events per day over last 60 days",
+      "acceptanceCriteria": [
+        "On local snooze UI, display a histogram chart below the snooze controls",
+        "X-axis: last 60 days (most recent on right)",
+        "Y-axis: count of events per day",
+        "Use inline SVG or simple HTML/CSS bars (no external JS libraries)",
+        "Days with zero events show as empty/minimal bar",
+        "Show date labels for first day, last day, and maybe middle",
+        "Chart title: 'Gate Unlocks - Last 60 Days'"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Generate the chart server-side as inline SVG for simplicity. Read events from events.json, filter to last 60 days, group by date. Dallas timezone for day boundaries (America/Chicago)."
+    },
+    {
+      "id": "let-food-into-civic-00011",
+      "title": "Add polar chart showing time-of-day distribution of gate unlock events",
+      "acceptanceCriteria": [
+        "On local snooze UI, display a polar/radial chart showing hourly distribution",
+        "24 segments representing hours of the day (midnight at top, noon at bottom)",
+        "Segment size/color intensity based on event count for that hour",
+        "Times converted to Dallas timezone (America/Chicago) before binning",
+        "Use inline SVG (no external JS libraries)",
+        "Chart title: 'Unlock Times (Dallas)'",
+        "Show hour labels around the circle (12am, 6am, 12pm, 6pm at minimum)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "This shows delivery patterns - when do most unlocks happen? Use pytz or zoneinfo to convert UTC timestamps to America/Chicago before extracting hour. Consider all historical events, not just last 60 days."
     }
   ]
 }
