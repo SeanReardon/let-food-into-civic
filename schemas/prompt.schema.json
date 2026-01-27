@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claudia.contrived.com/schemas/prompt.schema.json",
+  "title": "Claudia Prompt",
+  "description": "Prompt file for Claudia-managed repositories",
+  "type": "object",
+  "required": ["id", "title", "content", "status", "createdAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the prompt (typically matches filename without extension)",
+      "minLength": 1,
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Short descriptive title",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line summary"
+    },
+    "authors": {
+      "type": "array",
+      "description": "Who wrote this prompt",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["human", "model"] }
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when prompt was created"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "ready", "archived"],
+      "description": "Workflow status - only 'ready' prompts can be executed"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Categorization tags"
+    },
+    "blockedBy": {
+      "type": "string",
+      "description": "ID of another prompt this depends on"
+    },
+    "content": {
+      "type": "string",
+      "description": "The full prompt text"
+    },
+    "executions": {
+      "type": "array",
+      "description": "Execution history (populated by Claudia, humans don't touch this)",
+      "items": {
+        "type": "object",
+        "required": ["executedAt", "model", "prdIds"],
+        "properties": {
+          "executedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the prompt was executed"
+          },
+          "model": {
+            "type": "string",
+            "description": "Which Claude model executed the prompt"
+          },
+          "prdIds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "PRD IDs generated from this execution"
+          },
+          "tokensUsed": {
+            "type": "integer",
+            "description": "Total tokens consumed"
+          },
+          "cost": {
+            "type": "number",
+            "description": "Estimated cost in USD"
+          }
+        }
+      }
+    }
+  }
+}

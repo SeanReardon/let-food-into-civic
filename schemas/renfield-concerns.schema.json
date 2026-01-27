@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Renfield Concerns",
+  "description": "Code concerns identified by Renfield for this repository",
+  "type": "object",
+  "required": ["lastScan", "concerns"],
+  "properties": {
+    "lastScan": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp of last Renfield scan"
+    },
+    "scanDurationSeconds": {
+      "type": "number",
+      "description": "How long the scan took"
+    },
+    "modelUsed": {
+      "type": "string",
+      "description": "Model used for scanning (e.g., 'glm-4.7')"
+    },
+    "concerns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/concern"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "filesScanned": {
+          "type": "integer"
+        },
+        "concernsFound": {
+          "type": "integer"
+        },
+        "byCategory": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "bySeverity": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "concern": {
+      "type": "object",
+      "required": ["id", "category", "severity", "title", "description", "discovered_at", "addressed", "admonished"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier (UUID)"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["security", "performance", "maintainability", "correctness", "style"],
+          "description": "Type of concern"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "How severe the concern is"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Brief description of the concern"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed explanation of the concern and recommended fix"
+        },
+        "file_path": {
+          "type": "string",
+          "description": "Relative path to the affected file"
+        },
+        "line_range": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[start_line, end_line] or null if file-wide concern"
+        },
+        "discovered_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when this concern was discovered"
+        },
+        "addressed": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if the concern has been fixed"
+        },
+        "addressed_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO timestamp when the concern was addressed"
+        },
+        "admonished": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if the concern was dismissed by human as not actionable"
+        },
+        "admonished_reason": {
+          "type": ["string", "null"],
+          "description": "Explanation of why the concern was dismissed"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Renfield's confidence in this concern (0.0-1.0)"
+        },
+        "code_snippet": {
+          "type": "string",
+          "description": "The problematic code snippet"
+        },
+        "suggested_fix": {
+          "type": "string",
+          "description": "Suggested fix for the issue"
+        }
+      }
+    }
+  }
+}
