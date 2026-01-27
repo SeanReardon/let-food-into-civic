@@ -104,7 +104,7 @@
         "Button styling matches existing page design, subtle but visible"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "This lets local users preview what remote visitors see, and easily switch back. The ?view= parameter overrides is_local_network() for the page display only, not for admin actions. Remote users still can't access /admin/snooze even if they add ?view=local."
     }
   ]

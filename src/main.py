@@ -934,6 +934,9 @@ def render_snooze_ui():
             <footer>
                 <p>Let Food Into Civic</p>
                 <p>Local network access only</p>
+                <p style="margin-top: 16px;">
+                    <a href="/?view=public" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; display: inline-block;">View Public Page</a>
+                </p>
             </footer>
         </div>
     </body>
@@ -1257,9 +1260,12 @@ def render_public_landing_page():
                 <p>&copy; 2024 <a href="https://contrived.com">Contrived LLC</a>. All rights reserved.</p>
                 <p>A home automation service for private, residential use.</p>
                 <p style="margin-top: 16px;">
-                    <a href="https://contrived.com/privacy">Privacy Policy</a> · 
-                    <a href="https://let-food-into-civic.contrived.com/sms-consent">SMS Terms</a> · 
+                    <a href="https://contrived.com/privacy">Privacy Policy</a> ·
+                    <a href="https://let-food-into-civic.contrived.com/sms-consent">SMS Terms</a> ·
                     <a href="mailto:contact@contrived.com">Contact Us</a>
+                </p>
+                <p style="margin-top: 16px;">
+                    <a href="/?view=local" style="color: var(--text-muted); text-decoration: none; font-size: 0.8rem; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; display: inline-block;">View Local Controls</a>
                 </p>
             </footer>
         </div>
@@ -1272,8 +1278,26 @@ def render_public_landing_page():
 def index():
     """
     Home page - shows snooze UI for local network, public landing page for remote.
+
+    Supports ?view= query parameter to override automatic network detection:
+    - ?view=public: Show public landing page (works from anywhere)
+    - ?view=local: Show snooze UI (only works from local network, returns 403 if remote)
     """
-    if is_local_network(request):
+    view_override = request.args.get('view', '').lower()
+    is_local = is_local_network(request)
+
+    # Handle view override
+    if view_override == 'local':
+        if not is_local:
+            # Remote user trying to access local controls
+            return jsonify({'error': 'Access denied - local network only'}), 403
+        return render_snooze_ui()
+    elif view_override == 'public':
+        # Anyone can view the public page
+        return render_public_landing_page()
+
+    # Default: automatic detection based on network
+    if is_local:
         return render_snooze_ui()
     return render_public_landing_page()
 

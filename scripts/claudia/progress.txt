@@ -90,3 +90,23 @@ Verified that all three snooze feature tasks (00001, 00002, 00003) were fully im
 - scripts/claudia/prd.json (marked 3 tasks as passes: true)
 
 ---
+
+## 2026-01-27: let-food-into-civic-00007 - Add toggle button to switch between local snooze UI and public landing page views
+
+### Summary
+Added view toggle buttons that allow local users to preview the public landing page and remote users to see a "View Local Controls" option (which returns 403 if accessed remotely). Implemented ?view= query parameter to override automatic network detection.
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added "View Public Page" button to snooze UI footer (links to /?view=public)
+- Added "View Local Controls" button to public landing page footer (links to /?view=local)
+- Updated index() route to handle ?view= query parameter:
+  - ?view=public: Shows public page (works from anywhere)
+  - ?view=local: Shows snooze UI if local, returns 403 JSON if remote
+  - No param: Uses automatic network detection (existing behavior)
+- Button styling matches existing page design (subtle, bordered buttons)
+- 6 test cases verified: local/remote with view=public, view=local, and default
+
+---
