@@ -27,7 +27,7 @@
         "Return True for local network, False for remote"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": "This is the foundation for the local-only snooze UI. Nginx forwards requests, so we need to check X-Forwarded-For. Be careful with header spoofing - only trust if coming from known proxy."
     },
     {
@@ -43,7 +43,7 @@
         "Map phone numbers to names: +14693059242=linda, +12149090499=sean"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": "Use JSON format for the snooze file. The phone-to-name mapping can be a simple dict constant. Normalize phone numbers before comparison using existing normalize_phone_number() function. Snooze=true means SKIP, snooze=false means SEND."
     },
     {
@@ -59,7 +59,7 @@
         "Clear text indicating 'snoozed = skip next event only, auto-resets after gate unlocks'"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": "Keep the UI simple and clean. Match the existing style of the landing page. Use inline HTML like the existing pages do. Toggles should be large and easy to tap on mobile. When snoozed, show a moon/sleep icon or similar."
     },
     {
