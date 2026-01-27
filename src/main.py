@@ -855,7 +855,7 @@ def index():
                 </p>
                 <p>
                     For any questions about this service, our company, or how we handle your information, 
-                    please don't hesitate to reach out to us at sean.reardon@contrived.com.
+                    please don't hesitate to reach out to us at contact@contrived.com.
                 </p>
             </div>
             
@@ -889,7 +889,7 @@ def index():
                 <p style="margin-top: 16px;">
                     <a href="https://contrived.com/privacy">Privacy Policy</a> · 
                     <a href="https://let-food-into-civic.contrived.com/sms-consent">SMS Terms</a> · 
-                    <a href="mailto:sean.reardon@contrived.com">Contact Us</a>
+                    <a href="mailto:contact@contrived.com">Contact Us</a>
                 </p>
             </footer>
         </div>
@@ -1100,7 +1100,7 @@ def sms_consent():
             <p>For questions about this service:</p>
             <ul>
                 <li>Reply <strong>HELP</strong> to any message</li>
-                <li>Email: sean.reardon@contrived.com</li>
+                <li>Email: contact@contrived.com</li>
             </ul>
             
             <div class="footer">

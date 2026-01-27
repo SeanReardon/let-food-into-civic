@@ -13,7 +13,7 @@
         "Verify mailto: links work correctly"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Simple find/replace. There are references in the / route HTML and /sms-consent route HTML."
     },
     {
