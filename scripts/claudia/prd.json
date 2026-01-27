@@ -2,5 +2,95 @@
   "project": "let-food-into-civic",
   "version": "0.1.0",
   "branchName": "main",
-  "userStories": []
+  "userStories": [
+    {
+      "id": "let-food-into-civic-00006",
+      "title": "Update contact email to contact@contrived.com",
+      "acceptanceCriteria": [
+        "Change all instances of sean.reardon@contrived.com to contact@contrived.com",
+        "Update in the public landing page (index route)",
+        "Update in the SMS consent page (/sms-consent)",
+        "Verify mailto: links work correctly"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Simple find/replace. There are references in the / route HTML and /sms-consent route HTML."
+    },
+    {
+      "id": "let-food-into-civic-00001",
+      "title": "Add network detection helper to distinguish local vs remote requests",
+      "acceptanceCriteria": [
+        "Create is_local_network(request) helper function in main.py",
+        "Detect private IP ranges: 192.168.x.x, 10.x.x.x, 172.16-31.x.x",
+        "Also treat 127.0.0.1 and ::1 as local",
+        "Check X-Forwarded-For header when behind reverse proxy (nginx)",
+        "Return True for local network, False for remote"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "This is the foundation for the local-only snooze UI. Nginx forwards requests, so we need to check X-Forwarded-For. Be careful with header spoofing - only trust if coming from known proxy."
+    },
+    {
+      "id": "let-food-into-civic-00002",
+      "title": "Add persistent snooze state file for per-recipient notifications",
+      "acceptanceCriteria": [
+        "Create snooze state file at /app/data/snooze.json",
+        "Store snooze state for each recipient: {\"linda\": false, \"sean\": false}",
+        "false = not snoozed (will receive notification), true = snoozed (skip next notification)",
+        "Create load_snooze_state() function that returns dict",
+        "Create save_snooze_state(state) function that writes to file",
+        "Initialize file with both NOT snoozed (false) if it doesn't exist",
+        "Map phone numbers to names: +14693059242=linda, +12149090499=sean"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Use JSON format for the snooze file. The phone-to-name mapping can be a simple dict constant. Normalize phone numbers before comparison using existing normalize_phone_number() function. Snooze=true means SKIP, snooze=false means SEND."
+    },
+    {
+      "id": "let-food-into-civic-00003",
+      "title": "Create local-only snooze UI for managing recipient notifications",
+      "acceptanceCriteria": [
+        "Modify / route to show snooze UI when is_local_network() returns True",
+        "Show existing public landing page when is_local_network() returns False",
+        "Display two recipients: Linda (top) and Sean (bottom)",
+        "Show phone number formatted nicely under each name",
+        "Each recipient has a 'Snooze' toggle reflecting current state from snooze.json",
+        "UI is mobile-friendly with large tap targets",
+        "Clear text indicating 'snoozed = skip next event only, auto-resets after gate unlocks'"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Keep the UI simple and clean. Match the existing style of the landing page. Use inline HTML like the existing pages do. Toggles should be large and easy to tap on mobile. When snoozed, show a moon/sleep icon or similar."
+    },
+    {
+      "id": "let-food-into-civic-00004",
+      "title": "Add endpoint to snooze/unsnooze recipient notifications",
+      "acceptanceCriteria": [
+        "Add POST /admin/snooze endpoint",
+        "Accept JSON body: {\"recipient\": \"linda\", \"snoozed\": true}",
+        "Validate recipient is 'linda' or 'sean'",
+        "Update snooze.json with new state",
+        "Return JSON with success status and current snooze state of both recipients",
+        "Only allow from local network (return 403 if remote)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "The snooze UI will call this endpoint via JavaScript fetch. Could also support form-based submission that redirects back to / for no-JS fallback."
+    },
+    {
+      "id": "let-food-into-civic-00005",
+      "title": "Modify SMS notification logic to respect snooze state and auto-reset",
+      "acceptanceCriteria": [
+        "In send_sms_notifications(), read snooze state from snooze.json before sending",
+        "Skip sending to recipients who are snoozed (snoozed=true)",
+        "Log which recipients were skipped due to snooze: '😴 Skipping Linda (snoozed)'",
+        "After notification attempt completes, reset all snooze states to false",
+        "Write reset state back to snooze.json",
+        "Reset happens regardless of SMS success/failure"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "The reset must happen after the event, not before. This ensures snooze is always 'just for the next event'. Even if SMS fails, we reset - the event happened, the gate was unlocked. Use 😴 emoji in logs for snoozed recipients."
+    }
+  ]
 }
