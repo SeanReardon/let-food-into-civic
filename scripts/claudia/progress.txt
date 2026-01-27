@@ -19,3 +19,74 @@ Updated all instances of sean.reardon@contrived.com to contact@contrived.com in 
 - Line 1103: Updated plain text email in SMS consent page "Contact & Support" section
 
 ---
+
+## 2026-01-27: let-food-into-civic-00001 - Add network detection helper to distinguish local vs remote requests
+
+### Summary
+Implemented is_local_network(request) helper function that detects whether a request originates from local network (private IP ranges, localhost) or remote. Handles X-Forwarded-For header for reverse proxy setups.
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added is_local_network() function using Python's ipaddress module
+- Checks X-Forwarded-For header first (for nginx proxy), falls back to remote_addr
+- Detects private IP ranges via ip.is_private and localhost via ip.is_loopback
+- Returns True for local, False for remote, with logging for invalid IPs
+
+---
+
+## 2026-01-27: let-food-into-civic-00002 - Add persistent snooze state file for per-recipient notifications
+
+### Summary
+Implemented snooze state persistence with JSON file storage at /app/data/snooze.json. Added phone-to-name mapping and helper functions for loading, saving, and checking snooze state.
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added SNOOZE_FILE constant pointing to /app/data/snooze.json
+- Added PHONE_TO_NAME mapping: +14693059242=linda, +12149090499=sean
+- Created load_snooze_state() - loads from file, creates with defaults if missing
+- Created save_snooze_state() - writes state to file
+- Created get_name_for_phone() - maps normalized phone to recipient name
+- Created is_snoozed() - checks if a phone number is snoozed
+- Created reset_all_snooze() - resets all snooze states to false
+
+---
+
+## 2026-01-27: let-food-into-civic-00003 - Create local-only snooze UI for managing recipient notifications
+
+### Summary
+Created a mobile-friendly snooze management UI that displays when accessing / from local network. Shows Linda and Sean as toggle-able recipients with their phone numbers and current snooze status.
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added render_snooze_ui() function generating the local-only UI
+- Refactored index() to check is_local_network() and return appropriate page
+- UI shows recipient cards with name, formatted phone number, and toggle button
+- Toggle buttons submit forms to POST /admin/snooze endpoint
+- Info box explains snooze behavior (skips next event only, auto-resets)
+- Added POST /admin/snooze endpoint that validates recipient, updates state, and redirects
+- Endpoint returns 403 for remote requests, accepts both JSON and form data
+- Modified send_sms_notifications() to check snooze state and skip snoozed recipients
+- Added reset_all_snooze() call after notifications complete (regardless of success/failure)
+
+---
+
+## 2026-01-27: Batch verification - Tasks 00001, 00002, 00003
+
+### Summary
+Verified that all three snooze feature tasks (00001, 00002, 00003) were fully implemented and meet all acceptance criteria. Updated prd.json to mark them as passes: true.
+
+### Verification Details
+- **00001**: is_local_network() function at main.py:74-114 correctly detects private IPs, localhost, and handles X-Forwarded-For
+- **00002**: Snooze state persistence at /app/data/snooze.json with load/save functions at main.py:290-344
+- **00003**: Local-only snooze UI with render_snooze_ui() at main.py:699-941, mobile-friendly with large toggle buttons
+
+### Files Changed
+- scripts/claudia/prd.json (marked 3 tasks as passes: true)
+
+---

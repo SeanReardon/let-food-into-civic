@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, Response, request, jsonify
+from flask import Flask, Response, request, jsonify, redirect
 import telnyx
 
 # Load environment variables from .env file
@@ -69,6 +69,49 @@ ITERATIONS = int(os.getenv("ITERATIONS", "6"))
 # SMS notification configuration
 # Comma-separated list of phone numbers to notify (accepts various formats, normalized to E.164)
 NOTIFY_NUMBERS_RAW = [n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()]
+
+
+def is_local_network(req) -> bool:
+    """
+    Check if a request originates from the local network.
+
+    Returns True for:
+    - Private IP ranges: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+    - Localhost: 127.0.0.1, ::1
+
+    When behind a reverse proxy (nginx), checks X-Forwarded-For header.
+    """
+    import ipaddress
+
+    # Get the client IP - check X-Forwarded-For first (for reverse proxy setups)
+    forwarded_for = req.headers.get('X-Forwarded-For', '')
+    if forwarded_for:
+        # X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+        # The first IP is the original client
+        client_ip = forwarded_for.split(',')[0].strip()
+    else:
+        # Fall back to remote_addr for direct connections
+        client_ip = req.remote_addr or ''
+
+    if not client_ip:
+        return False
+
+    try:
+        ip = ipaddress.ip_address(client_ip)
+
+        # Check for localhost
+        if ip.is_loopback:
+            return True
+
+        # Check for private network ranges
+        if ip.is_private:
+            return True
+
+        return False
+    except ValueError:
+        # Invalid IP address
+        logger.warning(f"Invalid IP address for local network check: {client_ip}")
+        return False
 
 
 def normalize_phone_number(phone: str) -> str:
@@ -137,6 +180,16 @@ telnyx_client = telnyx.Telnyx(api_key=TELNYX_API_KEY) if TELNYX_API_KEY else Non
 
 # Opt-in tracking file
 OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
+
+# Snooze state file
+SNOOZE_FILE = DATA_DIR / "snooze.json"
+
+# Phone number to name mapping for snooze feature
+PHONE_TO_NAME = {
+    "+14693059242": "linda",
+    "+12149090499": "sean",
+}
+NAME_TO_PHONE = {v: k for k, v in PHONE_TO_NAME.items()}
 
 
 # =============================================================================
@@ -215,19 +268,80 @@ def opt_out(phone_number, source="manual"):
 def audit_log_opt_in_event(phone_number, action, source, timestamp):
     """Write audit log entry for opt-in/opt-out events."""
     audit_file = OPT_IN_FLOW_DIR / f"audit-{datetime.now().strftime('%Y-%m')}.log"
-    
+
     entry = {
         "timestamp": timestamp,
         "phone_number": phone_number,
         "action": action,
         "source": source,
     }
-    
+
     try:
         with open(audit_file, 'a') as f:
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
         logger.error(f"Failed to write audit log: {e}")
+
+
+# =============================================================================
+# Snooze State Management
+# =============================================================================
+
+def load_snooze_state():
+    """
+    Load snooze state from file.
+
+    Returns dict like {"linda": false, "sean": false}.
+    Creates file with default (not snoozed) state if it doesn't exist.
+    """
+    default_state = {"linda": False, "sean": False}
+
+    if not SNOOZE_FILE.exists():
+        save_snooze_state(default_state)
+        return default_state
+
+    try:
+        with open(SNOOZE_FILE, 'r') as f:
+            state = json.load(f)
+            # Ensure both recipients exist in state
+            for name in default_state:
+                if name not in state:
+                    state[name] = False
+            return state
+    except Exception as e:
+        logger.error(f"Failed to load snooze state: {e}")
+        return default_state
+
+
+def save_snooze_state(state):
+    """Save snooze state to file."""
+    try:
+        with open(SNOOZE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save snooze state: {e}")
+
+
+def get_name_for_phone(phone_number):
+    """Get recipient name for a phone number."""
+    normalized = normalize_phone_number(phone_number)
+    return PHONE_TO_NAME.get(normalized)
+
+
+def is_snoozed(phone_number):
+    """Check if a phone number is snoozed."""
+    name = get_name_for_phone(phone_number)
+    if not name:
+        return False
+    state = load_snooze_state()
+    return state.get(name, False)
+
+
+def reset_all_snooze():
+    """Reset all snooze states to false (not snoozed)."""
+    state = {"linda": False, "sean": False}
+    save_snooze_state(state)
+    logger.info("🔄 All snooze states reset to false")
 
 
 # Initialize opt-ins for configured numbers (auto-opt-in for initial setup)
@@ -299,36 +413,45 @@ if NOTIFY_NUMBERS:
 def send_sms_notifications(caller: str, timestamp: datetime):
     """
     Send SMS notifications to configured phone numbers.
-    
+
     Runs in a background thread to not block the webhook response.
+    Respects snooze state and resets all snoozes after the event.
     """
     logger.info(f"📱 SMS notification function called for caller: {caller} at {timestamp}")
-    
+
     if not NOTIFY_NUMBERS:
         logger.warning("⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)")
         return
-    
+
     if not TELNYX_PHONE_NUMBER:
         logger.warning("⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)")
         return
-    
+
     if not telnyx_client:
         logger.warning("⚠️  Telnyx client not initialized (API key missing)")
         return
-    
+
     message = "the civic callbox was answered and I did 5s, <3 lfic."
     logger.info(f"📝 SMS message: {message}")
     logger.info(f"📋 Sending to {len(NOTIFY_NUMBERS)} recipient(s): {NOTIFY_NUMBERS}")
-    
+
     success_count = 0
     failure_count = 0
-    
+    snoozed_count = 0
+
     for phone_number in NOTIFY_NUMBERS:
+        # Check snooze state first
+        name = get_name_for_phone(phone_number)
+        if is_snoozed(phone_number):
+            logger.info(f"😴 Skipping {name.capitalize() if name else phone_number} (snoozed)")
+            snoozed_count += 1
+            continue
+
         # Always check durable opt-in/opt-out record before sending
         # This respects opt-out status even if number is in NOTIFY_NUMBERS
         opt_ins = load_opt_ins()
         phone_status = opt_ins.get(phone_number, {}).get("status")
-        
+
         if phone_status != "opted_in":
             if phone_status == "opted_out":
                 logger.warning(f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)")
@@ -336,7 +459,7 @@ def send_sms_notifications(caller: str, timestamp: datetime):
                 logger.warning(f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})")
             failure_count += 1
             continue
-        
+
         try:
             logger.info(f"📤 Attempting to send SMS to {phone_number}...")
             telnyx_client.messages.send(
@@ -349,8 +472,11 @@ def send_sms_notifications(caller: str, timestamp: datetime):
         except Exception as e:
             logger.error(f"❌ Failed to send SMS to {phone_number}: {e}", exc_info=True)
             failure_count += 1
-    
-    logger.info(f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed out of {len(NOTIFY_NUMBERS)} total")
+
+    # Reset all snooze states after the event (regardless of success/failure)
+    reset_all_snooze()
+
+    logger.info(f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed, {snoozed_count} snoozed out of {len(NOTIFY_NUMBERS)} total")
 
 
 def send_notifications_async(caller: str):
@@ -570,9 +696,253 @@ def handle_incoming_sms():
     return jsonify({'status': 'processed'}), 200
 
 
-@app.route('/', methods=['GET'])
-def index():
-    """Public landing page for Telnyx verification."""
+def render_snooze_ui():
+    """Render the local-only snooze management UI."""
+    state = load_snooze_state()
+    linda_snoozed = state.get("linda", False)
+    sean_snoozed = state.get("sean", False)
+
+    def format_phone(phone):
+        """Format phone number nicely: +14693059242 -> (469) 305-9242"""
+        if phone.startswith("+1") and len(phone) == 12:
+            return f"({phone[2:5]}) {phone[5:8]}-{phone[8:]}"
+        return phone
+
+    linda_phone = format_phone(NAME_TO_PHONE.get("linda", ""))
+    sean_phone = format_phone(NAME_TO_PHONE.get("sean", ""))
+
+    linda_toggle_class = "toggle snoozed" if linda_snoozed else "toggle"
+    sean_toggle_class = "toggle snoozed" if sean_snoozed else "toggle"
+
+    linda_status = "Snoozed" if linda_snoozed else "Active"
+    sean_status = "Snoozed" if sean_snoozed else "Active"
+
+    return f'''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Snooze Notifications — Let Food Into Civic</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+            :root {{
+                --bg: #fafaf9;
+                --bg-alt: #ffffff;
+                --text: #1c1917;
+                --text-secondary: #57534e;
+                --text-muted: #a8a29e;
+                --accent: #b45309;
+                --accent-light: #fef3c7;
+                --border: #e7e5e4;
+                --success: #22c55e;
+                --success-light: #dcfce7;
+            }}
+
+            body {{
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                min-height: 100vh;
+                line-height: 1.6;
+                font-size: 16px;
+            }}
+
+            .container {{
+                max-width: 480px;
+                margin: 0 auto;
+                padding: 48px 24px;
+            }}
+
+            header {{
+                text-align: center;
+                margin-bottom: 40px;
+            }}
+
+            .logo {{
+                font-size: 2.5rem;
+                margin-bottom: 16px;
+            }}
+
+            h1 {{
+                font-family: 'Source Serif 4', Georgia, serif;
+                font-size: 1.75rem;
+                font-weight: 600;
+                margin-bottom: 8px;
+            }}
+
+            .subtitle {{
+                color: var(--text-secondary);
+                font-size: 0.95rem;
+            }}
+
+            .info-box {{
+                background: var(--accent-light);
+                border-left: 4px solid var(--accent);
+                padding: 16px 20px;
+                margin-bottom: 32px;
+                border-radius: 0 8px 8px 0;
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }}
+
+            .recipient-card {{
+                background: var(--bg-alt);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 24px;
+                margin-bottom: 16px;
+            }}
+
+            .recipient-header {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            }}
+
+            .recipient-name {{
+                font-size: 1.25rem;
+                font-weight: 600;
+            }}
+
+            .recipient-phone {{
+                color: var(--text-muted);
+                font-size: 0.9rem;
+            }}
+
+            .toggle {{
+                width: 64px;
+                height: 36px;
+                background: var(--success);
+                border-radius: 18px;
+                position: relative;
+                cursor: pointer;
+                transition: background 0.3s;
+                border: none;
+                padding: 0;
+            }}
+
+            .toggle::after {{
+                content: '';
+                position: absolute;
+                width: 28px;
+                height: 28px;
+                background: white;
+                border-radius: 50%;
+                top: 4px;
+                left: 4px;
+                transition: transform 0.3s;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }}
+
+            .toggle.snoozed {{
+                background: var(--text-muted);
+            }}
+
+            .toggle.snoozed::after {{
+                transform: translateX(28px);
+            }}
+
+            .status-row {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid var(--border);
+            }}
+
+            .status-label {{
+                font-size: 0.85rem;
+                color: var(--text-secondary);
+            }}
+
+            .status-value {{
+                font-size: 0.85rem;
+                font-weight: 500;
+            }}
+
+            .status-value.active {{
+                color: var(--success);
+            }}
+
+            .status-value.snoozed {{
+                color: var(--text-muted);
+            }}
+
+            footer {{
+                text-align: center;
+                margin-top: 40px;
+                color: var(--text-muted);
+                font-size: 0.8rem;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <div class="logo">🏠</div>
+                <h1>Snooze Notifications</h1>
+                <p class="subtitle">Manage who gets notified</p>
+            </header>
+
+            <div class="info-box">
+                Snoozing skips the <strong>next gate unlock event only</strong>. After the gate unlocks, snooze automatically resets and notifications resume.
+            </div>
+
+            <div class="recipient-card">
+                <div class="recipient-header">
+                    <div>
+                        <div class="recipient-name">Linda</div>
+                        <div class="recipient-phone">{linda_phone}</div>
+                    </div>
+                    <form method="POST" action="/admin/snooze" style="margin: 0;">
+                        <input type="hidden" name="recipient" value="linda">
+                        <input type="hidden" name="snoozed" value="{'false' if linda_snoozed else 'true'}">
+                        <button type="submit" class="{linda_toggle_class}" aria-label="Toggle snooze for Linda"></button>
+                    </form>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Notification status</span>
+                    <span class="status-value {'snoozed' if linda_snoozed else 'active'}">{linda_status}</span>
+                </div>
+            </div>
+
+            <div class="recipient-card">
+                <div class="recipient-header">
+                    <div>
+                        <div class="recipient-name">Sean</div>
+                        <div class="recipient-phone">{sean_phone}</div>
+                    </div>
+                    <form method="POST" action="/admin/snooze" style="margin: 0;">
+                        <input type="hidden" name="recipient" value="sean">
+                        <input type="hidden" name="snoozed" value="{'false' if sean_snoozed else 'true'}">
+                        <button type="submit" class="{sean_toggle_class}" aria-label="Toggle snooze for Sean"></button>
+                    </form>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Notification status</span>
+                    <span class="status-value {'snoozed' if sean_snoozed else 'active'}">{sean_status}</span>
+                </div>
+            </div>
+
+            <footer>
+                <p>Let Food Into Civic</p>
+                <p>Local network access only</p>
+            </footer>
+        </div>
+    </body>
+    </html>
+    '''
+
+
+def render_public_landing_page():
+    """Render the public landing page for external visitors."""
     return '''
     <!DOCTYPE html>
     <html lang="en">
@@ -898,6 +1268,16 @@ def index():
     '''
 
 
+@app.route('/', methods=['GET'])
+def index():
+    """
+    Home page - shows snooze UI for local network, public landing page for remote.
+    """
+    if is_local_network(request):
+        return render_snooze_ui()
+    return render_public_landing_page()
+
+
 @app.route('/status', methods=['GET'])
 def status():
     """Internal status page showing configuration."""
@@ -1116,6 +1496,62 @@ def sms_consent():
 # =============================================================================
 # Admin/Utility Endpoints
 # =============================================================================
+
+@app.route('/admin/snooze', methods=['POST'])
+def snooze_recipient():
+    """
+    Snooze or unsnooze a recipient's notifications.
+
+    POST /admin/snooze
+    Body (JSON): {"recipient": "linda", "snoozed": true}
+    Body (Form): recipient=linda&snoozed=true
+
+    Only accessible from local network.
+    """
+    # Check local network access
+    if not is_local_network(request):
+        logger.warning(f"Blocked snooze request from remote IP")
+        return jsonify({'error': 'Access denied - local network only'}), 403
+
+    # Get data from JSON or form
+    if request.is_json:
+        data = request.get_json() or {}
+        recipient = data.get('recipient', '').lower()
+        snoozed_raw = data.get('snoozed')
+    else:
+        recipient = request.form.get('recipient', '').lower()
+        snoozed_raw = request.form.get('snoozed', '')
+
+    # Parse snoozed value
+    if isinstance(snoozed_raw, bool):
+        snoozed = snoozed_raw
+    elif isinstance(snoozed_raw, str):
+        snoozed = snoozed_raw.lower() == 'true'
+    else:
+        snoozed = False
+
+    # Validate recipient
+    if recipient not in ['linda', 'sean']:
+        return jsonify({'error': 'Invalid recipient. Must be "linda" or "sean"'}), 400
+
+    # Update snooze state
+    state = load_snooze_state()
+    state[recipient] = snoozed
+    save_snooze_state(state)
+
+    logger.info(f"{'😴' if snoozed else '🔔'} {recipient.capitalize()} snooze set to {snoozed}")
+
+    # If form submission, redirect back to home page
+    if not request.is_json:
+        return redirect('/')
+
+    return jsonify({
+        'success': True,
+        'recipient': recipient,
+        'snoozed': snoozed,
+        'state': state,
+    })
+
 
 @app.route('/admin/test-sms', methods=['POST'])
 def test_sms():
