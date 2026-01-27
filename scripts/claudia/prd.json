@@ -91,6 +91,21 @@
       "priority": 5,
       "passes": true,
       "notes": "The reset must happen after the event, not before. This ensures snooze is always 'just for the next event'. Even if SMS fails, we reset - the event happened, the gate was unlocked. Use 😴 emoji in logs for snoozed recipients."
+    },
+    {
+      "id": "let-food-into-civic-00007",
+      "title": "Add toggle button to switch between local snooze UI and public landing page views",
+      "acceptanceCriteria": [
+        "On snooze UI (local view): add 'View Public Page' button near the 'Local network access only' text at bottom",
+        "On public landing page: add 'View Local Controls' button at bottom (only functional from local network)",
+        "Use query parameter ?view=public or ?view=local to override the automatic network detection",
+        "When on local network viewing public page, the toggle returns to snooze UI",
+        "When remote user clicks 'View Local Controls', show 403 or redirect back (they can't access it)",
+        "Button styling matches existing page design, subtle but visible"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "This lets local users preview what remote visitors see, and easily switch back. The ?view= parameter overrides is_local_network() for the page display only, not for admin actions. Remote users still can't access /admin/snooze even if they add ?view=local."
     }
   ]
 }
