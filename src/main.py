@@ -62,13 +62,17 @@ TELNYX_API_KEY = os.getenv("TELNYX_LET_FOOD_INTO_CIVIC_KEY", "")
 
 # DTMF tone configuration
 UNLOCK_DIGIT = os.getenv("UNLOCK_DIGIT", "5")
-TONE_DURATION_REPEATS = int(os.getenv("TONE_DURATION_REPEATS", "8"))  # ~2 seconds (8 x 250ms)
+TONE_DURATION_REPEATS = int(
+    os.getenv("TONE_DURATION_REPEATS", "8")
+)  # ~2 seconds (8 x 250ms)
 PAUSE_DURATION = float(os.getenv("PAUSE_DURATION", "0.5"))  # seconds
 ITERATIONS = int(os.getenv("ITERATIONS", "6"))
 
 # SMS notification configuration
 # Comma-separated list of phone numbers to notify (accepts various formats, normalized to E.164)
-NOTIFY_NUMBERS_RAW = [n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()]
+NOTIFY_NUMBERS_RAW = [
+    n.strip() for n in os.getenv("NOTIFY_NUMBERS", "").split(",") if n.strip()
+]
 
 
 def is_local_network(req) -> bool:
@@ -84,14 +88,14 @@ def is_local_network(req) -> bool:
     import ipaddress
 
     # Get the client IP - check X-Forwarded-For first (for reverse proxy setups)
-    forwarded_for = req.headers.get('X-Forwarded-For', '')
+    forwarded_for = req.headers.get("X-Forwarded-For", "")
     if forwarded_for:
         # X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
         # The first IP is the original client
-        client_ip = forwarded_for.split(',')[0].strip()
+        client_ip = forwarded_for.split(",")[0].strip()
     else:
         # Fall back to remote_addr for direct connections
-        client_ip = req.remote_addr or ''
+        client_ip = req.remote_addr or ""
 
     if not client_ip:
         return False
@@ -117,7 +121,7 @@ def is_local_network(req) -> bool:
 def normalize_phone_number(phone: str) -> str:
     """
     Normalize phone number to E.164 format (+1XXXXXXXXXX).
-    
+
     Handles various formats:
     - +12149090499 (already E.164)
     - (214) 909-0499
@@ -126,41 +130,41 @@ def normalize_phone_number(phone: str) -> str:
     - 12149090499
     - 1-214-909-0499
     - etc.
-    
+
     Assumes US numbers unless obviously not (starts with + and country code other than 1).
     """
     import re
-    
+
     # Remove all non-digit characters
-    digits = re.sub(r'\D', '', phone)
-    
+    digits = re.sub(r"\D", "", phone)
+
     # Handle empty or invalid
     if not digits:
         return phone  # Return original if we can't parse
-    
+
     # If it starts with +, check if it's already E.164
-    if phone.startswith('+'):
+    if phone.startswith("+"):
         # Extract digits after +
-        digits_after_plus = re.sub(r'\D', '', phone[1:])
-        if len(digits_after_plus) == 11 and digits_after_plus.startswith('1'):
-            return '+' + digits_after_plus
+        digits_after_plus = re.sub(r"\D", "", phone[1:])
+        if len(digits_after_plus) == 11 and digits_after_plus.startswith("1"):
+            return "+" + digits_after_plus
         elif len(digits_after_plus) == 10:
             # US number without country code
-            return '+1' + digits_after_plus
+            return "+1" + digits_after_plus
         else:
             # International number - return as-is
             return phone
-    
+
     # Handle US numbers (10 or 11 digits)
     if len(digits) == 10:
         # 10 digits: assume US, add country code
-        return '+1' + digits
-    elif len(digits) == 11 and digits.startswith('1'):
+        return "+1" + digits
+    elif len(digits) == 11 and digits.startswith("1"):
         # 11 digits starting with 1: US number
-        return '+' + digits
+        return "+" + digits
     elif len(digits) > 11:
         # More than 11 digits: might be international, return with +
-        return '+' + digits
+        return "+" + digits
     else:
         # Less than 10 digits: invalid, return original
         # Note: logger not available yet at module load time, so we'll log later if needed
@@ -173,7 +177,9 @@ NOTIFY_NUMBERS = [normalize_phone_number(n) for n in NOTIFY_NUMBERS_RAW]
 # Your Telnyx phone number (the one that receives calls and sends SMS)
 # Normalize to E.164 format
 TELNYX_PHONE_NUMBER_RAW = os.getenv("TELNYX_PHONE_NUMBER", "")
-TELNYX_PHONE_NUMBER = normalize_phone_number(TELNYX_PHONE_NUMBER_RAW) if TELNYX_PHONE_NUMBER_RAW else ""
+TELNYX_PHONE_NUMBER = (
+    normalize_phone_number(TELNYX_PHONE_NUMBER_RAW) if TELNYX_PHONE_NUMBER_RAW else ""
+)
 
 # Initialize Telnyx client
 telnyx_client = telnyx.Telnyx(api_key=TELNYX_API_KEY) if TELNYX_API_KEY else None
@@ -183,6 +189,9 @@ OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
 
 # Snooze state file
 SNOOZE_FILE = DATA_DIR / "snooze.json"
+
+# Events log file
+EVENTS_FILE = DATA_DIR / "events.json"
 
 # Phone number to name mapping for snooze feature
 PHONE_TO_NAME = {
@@ -196,12 +205,13 @@ NAME_TO_PHONE = {v: k for k, v in PHONE_TO_NAME.items()}
 # Opt-In/Opt-Out Management
 # =============================================================================
 
+
 def load_opt_ins():
     """Load opt-in status from file."""
     if not OPT_IN_FILE.exists():
         return {}
     try:
-        with open(OPT_IN_FILE, 'r') as f:
+        with open(OPT_IN_FILE, "r") as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Failed to load opt-ins: {e}")
@@ -211,7 +221,7 @@ def load_opt_ins():
 def save_opt_ins(opt_ins):
     """Save opt-in status to file."""
     try:
-        with open(OPT_IN_FILE, 'w') as f:
+        with open(OPT_IN_FILE, "w") as f:
             json.dump(opt_ins, f, indent=2)
     except Exception as e:
         logger.error(f"Failed to save opt-ins: {e}")
@@ -227,18 +237,18 @@ def opt_in(phone_number, source="manual"):
     """Record an opt-in event."""
     opt_ins = load_opt_ins()
     timestamp = datetime.now().isoformat()
-    
+
     opt_ins[phone_number] = {
         "status": "opted_in",
         "opted_in_at": timestamp,
         "source": source,
     }
-    
+
     save_opt_ins(opt_ins)
-    
+
     # Audit log
     audit_log_opt_in_event(phone_number, "opted_in", source, timestamp)
-    
+
     logger.info(f"✅ {phone_number} opted in (source: {source})")
 
 
@@ -246,22 +256,22 @@ def opt_out(phone_number, source="manual"):
     """Record an opt-out event."""
     opt_ins = load_opt_ins()
     timestamp = datetime.now().isoformat()
-    
+
     # Preserve original opt-in timestamp if it exists
     original_opt_in = opt_ins.get(phone_number, {}).get("opted_in_at")
-    
+
     opt_ins[phone_number] = {
         "status": "opted_out",
         "opted_out_at": timestamp,
         "opted_in_at": original_opt_in,  # Preserve history
         "source": source,
     }
-    
+
     save_opt_ins(opt_ins)
-    
+
     # Audit log
     audit_log_opt_in_event(phone_number, "opted_out", source, timestamp)
-    
+
     logger.info(f"🛑 {phone_number} opted out (source: {source})")
 
 
@@ -277,7 +287,7 @@ def audit_log_opt_in_event(phone_number, action, source, timestamp):
     }
 
     try:
-        with open(audit_file, 'a') as f:
+        with open(audit_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
         logger.error(f"Failed to write audit log: {e}")
@@ -286,6 +296,7 @@ def audit_log_opt_in_event(phone_number, action, source, timestamp):
 # =============================================================================
 # Snooze State Management
 # =============================================================================
+
 
 def load_snooze_state():
     """
@@ -301,7 +312,7 @@ def load_snooze_state():
         return default_state
 
     try:
-        with open(SNOOZE_FILE, 'r') as f:
+        with open(SNOOZE_FILE, "r") as f:
             state = json.load(f)
             # Ensure both recipients exist in state
             for name in default_state:
@@ -316,7 +327,7 @@ def load_snooze_state():
 def save_snooze_state(state):
     """Save snooze state to file."""
     try:
-        with open(SNOOZE_FILE, 'w') as f:
+        with open(SNOOZE_FILE, "w") as f:
             json.dump(state, f, indent=2)
     except Exception as e:
         logger.error(f"Failed to save snooze state: {e}")
@@ -344,6 +355,58 @@ def reset_all_snooze():
     logger.info("🔄 All snooze states reset to false")
 
 
+# =============================================================================
+# Event Logging
+# =============================================================================
+
+
+def load_events():
+    """
+    Load gate unlock events from file.
+
+    Returns list of event objects with 'timestamp' field.
+    Creates file with empty event list if it doesn't exist.
+    """
+    if not EVENTS_FILE.exists():
+        save_events([])
+        return []
+
+    try:
+        with open(EVENTS_FILE, "r") as f:
+            events = json.load(f)
+            # Validate events format
+            if not isinstance(events, list):
+                logger.error(
+                    f"Invalid events format: expected array, got {type(events)}"
+                )
+                return []
+            return events
+    except Exception as e:
+        logger.error(f"Failed to load events: {e}")
+        return []
+
+
+def save_events(events):
+    """Save events to file."""
+    try:
+        with open(EVENTS_FILE, "w") as f:
+            json.dump(events, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save events: {e}")
+
+
+def append_event(timestamp):
+    """
+    Add a new gate unlock event to the event log.
+
+    Events are stored in chronological order (newest at the end).
+    """
+    events = load_events()
+    events.append({"timestamp": timestamp})
+    save_events(events)
+    logger.debug(f"📝 Recorded unlock event at {timestamp}")
+
+
 # Initialize opt-ins for configured numbers (auto-opt-in for initial setup)
 def initialize_opt_ins():
     """
@@ -352,7 +415,7 @@ def initialize_opt_ins():
     """
     opt_ins = load_opt_ins()
     updated = False
-    
+
     for phone_number in NOTIFY_NUMBERS:
         # Only opt-in if not in the system at all (not if they've opted out)
         if phone_number not in opt_ins:
@@ -360,12 +423,16 @@ def initialize_opt_ins():
             updated = True
             # Send welcome message for new opt-ins
             send_welcome_message(phone_number)
-            logger.info(f"📋 Auto-opted-in {phone_number} (new number in NOTIFY_NUMBERS)")
+            logger.info(
+                f"📋 Auto-opted-in {phone_number} (new number in NOTIFY_NUMBERS)"
+            )
         elif opt_ins[phone_number].get("status") == "opted_out":
-            logger.info(f"⚠️  {phone_number} is in NOTIFY_NUMBERS but is opted out - respecting opt-out status")
+            logger.info(
+                f"⚠️  {phone_number} is in NOTIFY_NUMBERS but is opted out - respecting opt-out status"
+            )
         elif opt_ins[phone_number].get("status") == "opted_in":
             logger.debug(f"✅ {phone_number} already opted in")
-    
+
     if updated:
         logger.info("📋 Initialized opt-ins for configured notification numbers")
 
@@ -374,13 +441,13 @@ def send_welcome_message(phone_number):
     """Send a welcome/opt-in confirmation message to a newly opted-in number."""
     if not telnyx_client or not TELNYX_PHONE_NUMBER:
         return
-    
+
     welcome_text = (
         "Welcome to Let Food Into Civic gate unlock notifications! "
         "You'll receive alerts when deliveries arrive. "
         "Reply STOP to unsubscribe, HELP for assistance."
     )
-    
+
     try:
         telnyx_client.messages.send(
             from_=TELNYX_PHONE_NUMBER,
@@ -410,6 +477,7 @@ if NOTIFY_NUMBERS:
 # SMS Notification
 # =============================================================================
 
+
 def send_sms_notifications(caller: str, timestamp: datetime):
     """
     Send SMS notifications to configured phone numbers.
@@ -417,14 +485,20 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     Runs in a background thread to not block the webhook response.
     Respects snooze state and resets all snoozes after the event.
     """
-    logger.info(f"📱 SMS notification function called for caller: {caller} at {timestamp}")
+    logger.info(
+        f"📱 SMS notification function called for caller: {caller} at {timestamp}"
+    )
 
     if not NOTIFY_NUMBERS:
-        logger.warning("⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)")
+        logger.warning(
+            "⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)"
+        )
         return
 
     if not TELNYX_PHONE_NUMBER:
-        logger.warning("⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)")
+        logger.warning(
+            "⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)"
+        )
         return
 
     if not telnyx_client:
@@ -443,7 +517,9 @@ def send_sms_notifications(caller: str, timestamp: datetime):
         # Check snooze state first
         name = get_name_for_phone(phone_number)
         if is_snoozed(phone_number):
-            logger.info(f"😴 Skipping {name.capitalize() if name else phone_number} (snoozed)")
+            logger.info(
+                f"😴 Skipping {name.capitalize() if name else phone_number} (snoozed)"
+            )
             snoozed_count += 1
             continue
 
@@ -454,9 +530,13 @@ def send_sms_notifications(caller: str, timestamp: datetime):
 
         if phone_status != "opted_in":
             if phone_status == "opted_out":
-                logger.warning(f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)")
+                logger.warning(
+                    f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)"
+                )
             else:
-                logger.warning(f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})")
+                logger.warning(
+                    f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})"
+                )
             failure_count += 1
             continue
 
@@ -476,15 +556,15 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     # Reset all snooze states after the event (regardless of success/failure)
     reset_all_snooze()
 
-    logger.info(f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed, {snoozed_count} snoozed out of {len(NOTIFY_NUMBERS)} total")
+    logger.info(
+        f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed, {snoozed_count} snoozed out of {len(NOTIFY_NUMBERS)} total"
+    )
 
 
 def send_notifications_async(caller: str):
     """Send notifications in a background thread."""
     thread = threading.Thread(
-        target=send_sms_notifications,
-        args=(caller, datetime.now()),
-        daemon=True
+        target=send_sms_notifications, args=(caller, datetime.now()), daemon=True
     )
     thread.start()
 
@@ -495,100 +575,107 @@ def send_notifications_async(caller: str):
 
 # URL to the 2-second DTMF tone audio file
 DTMF_AUDIO_URL = os.getenv(
-    "DTMF_AUDIO_URL",
-    "https://let-food-into-civic.contrived.com/static/dtmf5-2sec.wav"
+    "DTMF_AUDIO_URL", "https://let-food-into-civic.contrived.com/static/dtmf5-2sec.wav"
 )
+
 
 def generate_unlock_texml() -> str:
     """
     Generate TeXML/TwiML response that plays DTMF tones to unlock the gate.
-    
+
     The call box expects:
     - Tone "5" held for ~2 seconds
     - Pause for 0.5 seconds
     - Repeat 6 times
-    
+
     We use a pre-recorded DTMF audio file because TwiML's <Play digits>
     only supports short (~100ms) tones. The audio file contains a 2-second
     DTMF "5" tone (770 Hz + 1336 Hz).
     """
     # Build the XML response using audio file for proper duration
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<Response>']
-    
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<Response>"]
+
     for i in range(ITERATIONS):
         # Play the DTMF tone audio file
-        xml_parts.append(f'    <Play>{DTMF_AUDIO_URL}</Play>')
-        
+        xml_parts.append(f"    <Play>{DTMF_AUDIO_URL}</Play>")
+
         # Add pause between iterations (skip pause after last iteration)
         if i < ITERATIONS - 1:
             xml_parts.append(f'    <Pause length="{PAUSE_DURATION}"/>')
-    
+
     # Hang up after we're done
-    xml_parts.append('    <Hangup/>')
-    xml_parts.append('</Response>')
-    
-    return '\n'.join(xml_parts)
+    xml_parts.append("    <Hangup/>")
+    xml_parts.append("</Response>")
+
+    return "\n".join(xml_parts)
 
 
 # =============================================================================
 # Webhook Endpoints
 # =============================================================================
 
-@app.route('/health', methods=['GET'])
+
+@app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint for container orchestration."""
     return {
-        'status': 'healthy',
-        'service': 'let-food-into-civic',
-        'notifications_configured': len(NOTIFY_NUMBERS) > 0,
-        'telnyx_configured': bool(TELNYX_API_KEY),
+        "status": "healthy",
+        "service": "let-food-into-civic",
+        "notifications_configured": len(NOTIFY_NUMBERS) > 0,
+        "telnyx_configured": bool(TELNYX_API_KEY),
     }, 200
 
 
-@app.route('/webhook/voice', methods=['POST', 'GET'])
+@app.route("/webhook/voice", methods=["POST", "GET"])
 def handle_incoming_call():
     """
     Webhook endpoint for incoming voice calls.
-    
+
     Telnyx will POST to this endpoint when a call comes in.
     We respond with TeXML instructions to play DTMF tones,
     and send SMS notifications.
     """
     # Log the incoming call with full details
-    caller = request.values.get('From', request.values.get('from', 'unknown'))
-    to_number = request.values.get('To', request.values.get('to', 'unknown'))
-    call_id = request.values.get('CallSid', request.values.get('call_sid', 'unknown'))
-    
+    caller = request.values.get("From", request.values.get("from", "unknown"))
+    to_number = request.values.get("To", request.values.get("to", "unknown"))
+    call_id = request.values.get("CallSid", request.values.get("call_sid", "unknown"))
+
     logger.info("=" * 60)
     logger.info(f"📞 INCOMING CALL RECEIVED")
     logger.info(f"   Call ID: {call_id}")
     logger.info(f"   From: {caller}")
     logger.info(f"   To: {to_number}")
     logger.info(f"   Timestamp: {datetime.now().isoformat()}")
-    logger.info(f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations")
-    
+    logger.info(
+        f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations"
+    )
+
+    # Record gate unlock event for historical analysis
+    event_timestamp = datetime.utcnow().isoformat() + "Z"
+    append_event(event_timestamp)
+
     # Send SMS notifications asynchronously
     logger.info(f"📱 Initiating SMS notification to {len(NOTIFY_NUMBERS)} recipient(s)")
     send_notifications_async(caller)
-    
+
     # Generate and return the TeXML response
     texml = generate_unlock_texml()
     logger.debug(f"Response TeXML:\n{texml}")
     logger.info(f"✅ TeXML response generated and sent")
     logger.info("=" * 60)
-    
-    return Response(texml, mimetype='application/xml')
+
+    return Response(texml, mimetype="application/xml")
 
 
-@app.route('/webhook/sms', methods=['POST', 'GET'])
+@app.route("/webhook/sms", methods=["POST", "GET"])
 def handle_incoming_sms():
     """
     Webhook endpoint for incoming SMS messages (STOP, HELP, START).
-    
+
     Telnyx will POST to this endpoint when someone replies to our SMS.
     We handle opt-in/opt-out commands here.
-    
-    NOTE: Telnyx sends webhooks for ALL message events (inbound, outbound, 
+
+    NOTE: Telnyx sends webhooks for ALL message events (inbound, outbound,
     delivery confirmations, etc.). We only process inbound messages.
     """
     # Log all incoming requests for debugging
@@ -599,68 +686,78 @@ def handle_incoming_sms():
     logger.info(f"   JSON: {request.get_json()}")
     logger.info(f"   Form: {dict(request.form)}")
     logger.info(f"   Args: {dict(request.args)}")
-    
+
     # Get message data from Telnyx webhook
     data = request.get_json() or request.form.to_dict() or request.args.to_dict()
-    
+
     # Check event type and direction - only process inbound messages
     # Telnyx sends webhooks for: message.received, message.sent, message.finalized, etc.
-    event_type = data.get('data', {}).get('event_type', '')
-    direction = data.get('data', {}).get('payload', {}).get('direction', '')
-    
+    event_type = data.get("data", {}).get("event_type", "")
+    direction = data.get("data", {}).get("payload", {}).get("direction", "")
+
     # Skip non-inbound messages (outbound confirmations, delivery receipts, etc.)
-    if direction == 'outbound':
-        logger.info(f"⏭️  Skipping outbound message event (event_type: {event_type}, direction: {direction})")
+    if direction == "outbound":
+        logger.info(
+            f"⏭️  Skipping outbound message event (event_type: {event_type}, direction: {direction})"
+        )
         logger.info("=" * 60)
-        return jsonify({'status': 'skipped', 'reason': 'outbound message'}), 200
-    
+        return jsonify({"status": "skipped", "reason": "outbound message"}), 200
+
     # Also skip if event type is not message.received (delivery confirmations, etc.)
-    if event_type and event_type != 'message.received':
-        logger.info(f"⏭️  Skipping non-received message event (event_type: {event_type})")
+    if event_type and event_type != "message.received":
+        logger.info(
+            f"⏭️  Skipping non-received message event (event_type: {event_type})"
+        )
         logger.info("=" * 60)
-        return jsonify({'status': 'skipped', 'reason': f'event_type: {event_type}'}), 200
-    
+        return jsonify(
+            {"status": "skipped", "reason": f"event_type: {event_type}"}
+        ), 200
+
     # Telnyx webhook format
-    from_number = data.get('data', {}).get('payload', {}).get('from', {})
+    from_number = data.get("data", {}).get("payload", {}).get("from", {})
     if isinstance(from_number, dict):
-        from_number = from_number.get('phone_number', 'unknown')
+        from_number = from_number.get("phone_number", "unknown")
     else:
-        from_number = data.get('from', data.get('From', 'unknown'))
-    
-    to_number = data.get('data', {}).get('payload', {}).get('to', [{}])[0] if isinstance(data.get('data', {}).get('payload', {}).get('to', []), list) else {}
+        from_number = data.get("from", data.get("From", "unknown"))
+
+    to_number = (
+        data.get("data", {}).get("payload", {}).get("to", [{}])[0]
+        if isinstance(data.get("data", {}).get("payload", {}).get("to", []), list)
+        else {}
+    )
     if isinstance(to_number, dict):
-        to_number = to_number.get('phone_number', 'unknown')
+        to_number = to_number.get("phone_number", "unknown")
     else:
-        to_number = data.get('to', data.get('To', 'unknown'))
-    
+        to_number = data.get("to", data.get("To", "unknown"))
+
     # Extra safety: skip if from_number is our own Telnyx number (would cause send-to-self error)
     if from_number == TELNYX_PHONE_NUMBER:
         logger.info(f"⏭️  Skipping message from our own number ({from_number})")
         logger.info("=" * 60)
-        return jsonify({'status': 'skipped', 'reason': 'message from self'}), 200
-    
+        return jsonify({"status": "skipped", "reason": "message from self"}), 200
+
     # Get message text - always normalize to uppercase for case-insensitive matching
-    message_text = data.get('data', {}).get('payload', {}).get('text', '')
+    message_text = data.get("data", {}).get("payload", {}).get("text", "")
     if not message_text:
-        message_text = data.get('text', data.get('Body', ''))
+        message_text = data.get("text", data.get("Body", ""))
     # Always convert to uppercase for case-insensitive command matching
-    message_text = message_text.strip().upper() if message_text else ''
-    
+    message_text = message_text.strip().upper() if message_text else ""
+
     logger.info("=" * 60)
     logger.info(f"📱 INCOMING SMS RECEIVED")
     logger.info(f"   From: {from_number}")
     logger.info(f"   To: {to_number}")
     logger.info(f"   Message: {message_text}")
     logger.info(f"   Timestamp: {datetime.now().isoformat()}")
-    
+
     # Handle commands
     response_text = None
-    
+
     if message_text == "STOP":
         opt_out(from_number, source="sms_reply")
         response_text = "You have been unsubscribed from gate unlock notifications. Reply START to resubscribe."
         logger.info(f"🛑 Processed STOP request from {from_number}")
-    
+
     elif message_text == "HELP":
         response_text = (
             "Let Food Into Civic: Automatic gate unlock notifications for deliveries. "
@@ -669,16 +766,18 @@ def handle_incoming_sms():
             "Reply STOP to unsubscribe."
         )
         logger.info(f"ℹ️  Processed HELP request from {from_number}")
-    
+
     elif message_text in ["START", "YES", "OPTIN", "SUBSCRIBE"]:
         opt_in(from_number, source="sms_reply")
         response_text = "You have been subscribed to gate unlock notifications. Reply STOP to unsubscribe."
         logger.info(f"✅ Processed START/OPT-IN request from {from_number}")
-    
+
     else:
         logger.info(f"❓ Unknown message from {from_number}: {message_text}")
-        response_text = "Unknown command. Reply STOP to unsubscribe, HELP for assistance."
-    
+        response_text = (
+            "Unknown command. Reply STOP to unsubscribe, HELP for assistance."
+        )
+
     # Send response if we have one
     if response_text and telnyx_client and TELNYX_PHONE_NUMBER:
         try:
@@ -690,10 +789,10 @@ def handle_incoming_sms():
             logger.info(f"📤 Sent response to {from_number}")
         except Exception as e:
             logger.error(f"❌ Failed to send response SMS: {e}", exc_info=True)
-    
+
     logger.info("=" * 60)
-    
-    return jsonify({'status': 'processed'}), 200
+
+    return jsonify({"status": "processed"}), 200
 
 
 def render_snooze_ui():
@@ -903,13 +1002,13 @@ def render_snooze_ui():
                     </div>
                     <form method="POST" action="/admin/snooze" style="margin: 0;">
                         <input type="hidden" name="recipient" value="linda">
-                        <input type="hidden" name="snoozed" value="{'false' if linda_snoozed else 'true'}">
+                        <input type="hidden" name="snoozed" value="{"false" if linda_snoozed else "true"}">
                         <button type="submit" class="{linda_toggle_class}" aria-label="Toggle snooze for Linda"></button>
                     </form>
                 </div>
                 <div class="status-row">
                     <span class="status-label">Notification status</span>
-                    <span class="status-value {'snoozed' if linda_snoozed else 'active'}">{linda_status}</span>
+                    <span class="status-value {"snoozed" if linda_snoozed else "active"}">{linda_status}</span>
                 </div>
             </div>
 
@@ -921,13 +1020,13 @@ def render_snooze_ui():
                     </div>
                     <form method="POST" action="/admin/snooze" style="margin: 0;">
                         <input type="hidden" name="recipient" value="sean">
-                        <input type="hidden" name="snoozed" value="{'false' if sean_snoozed else 'true'}">
+                        <input type="hidden" name="snoozed" value="{"false" if sean_snoozed else "true"}">
                         <button type="submit" class="{sean_toggle_class}" aria-label="Toggle snooze for Sean"></button>
                     </form>
                 </div>
                 <div class="status-row">
                     <span class="status-label">Notification status</span>
-                    <span class="status-value {'snoozed' if sean_snoozed else 'active'}">{sean_status}</span>
+                    <span class="status-value {"snoozed" if sean_snoozed else "active"}">{sean_status}</span>
                 </div>
             </div>
 
@@ -946,7 +1045,7 @@ def render_snooze_ui():
 
 def render_public_landing_page():
     """Render the public landing page for external visitors."""
-    return '''
+    return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -1271,10 +1370,10 @@ def render_public_landing_page():
         </div>
     </body>
     </html>
-    '''
+    """
 
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def index():
     """
     Home page - shows snooze UI for local network, public landing page for remote.
@@ -1283,16 +1382,16 @@ def index():
     - ?view=public: Show public landing page (works from anywhere)
     - ?view=local: Show snooze UI (only works from local network, returns 403 if remote)
     """
-    view_override = request.args.get('view', '').lower()
+    view_override = request.args.get("view", "").lower()
     is_local = is_local_network(request)
 
     # Handle view override
-    if view_override == 'local':
+    if view_override == "local":
         if not is_local:
             # Remote user trying to access local controls
-            return jsonify({'error': 'Access denied - local network only'}), 403
+            return jsonify({"error": "Access denied - local network only"}), 403
         return render_snooze_ui()
-    elif view_override == 'public':
+    elif view_override == "public":
         # Anyone can view the public page
         return render_public_landing_page()
 
@@ -1302,12 +1401,14 @@ def index():
     return render_public_landing_page()
 
 
-@app.route('/status', methods=['GET'])
+@app.route("/status", methods=["GET"])
 def status():
     """Internal status page showing configuration."""
-    notify_status = f"✅ {len(NOTIFY_NUMBERS)} number(s)" if NOTIFY_NUMBERS else "❌ Not configured"
+    notify_status = (
+        f"✅ {len(NOTIFY_NUMBERS)} number(s)" if NOTIFY_NUMBERS else "❌ Not configured"
+    )
     telnyx_status = "✅ Configured" if TELNYX_API_KEY else "❌ Not configured"
-    
+
     return f'''
     <html>
     <head>
@@ -1362,10 +1463,10 @@ def status():
     '''
 
 
-@app.route('/sms-consent', methods=['GET'])
+@app.route("/sms-consent", methods=["GET"])
 def sms_consent():
     """SMS consent disclosure page for toll-free verification with CTIA-required disclosures."""
-    return '''
+    return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -1514,14 +1615,15 @@ def sms_consent():
         </div>
     </body>
     </html>
-    '''
+    """
 
 
 # =============================================================================
 # Admin/Utility Endpoints
 # =============================================================================
 
-@app.route('/admin/snooze', methods=['POST'])
+
+@app.route("/admin/snooze", methods=["POST"])
 def snooze_recipient():
     """
     Snooze or unsnooze a recipient's notifications.
@@ -1535,68 +1637,74 @@ def snooze_recipient():
     # Check local network access
     if not is_local_network(request):
         logger.warning(f"Blocked snooze request from remote IP")
-        return jsonify({'error': 'Access denied - local network only'}), 403
+        return jsonify({"error": "Access denied - local network only"}), 403
 
     # Get data from JSON or form
     if request.is_json:
         data = request.get_json() or {}
-        recipient = data.get('recipient', '').lower()
-        snoozed_raw = data.get('snoozed')
+        recipient = data.get("recipient", "").lower()
+        snoozed_raw = data.get("snoozed")
     else:
-        recipient = request.form.get('recipient', '').lower()
-        snoozed_raw = request.form.get('snoozed', '')
+        recipient = request.form.get("recipient", "").lower()
+        snoozed_raw = request.form.get("snoozed", "")
 
     # Parse snoozed value
     if isinstance(snoozed_raw, bool):
         snoozed = snoozed_raw
     elif isinstance(snoozed_raw, str):
-        snoozed = snoozed_raw.lower() == 'true'
+        snoozed = snoozed_raw.lower() == "true"
     else:
         snoozed = False
 
     # Validate recipient
-    if recipient not in ['linda', 'sean']:
-        return jsonify({'error': 'Invalid recipient. Must be "linda" or "sean"'}), 400
+    if recipient not in ["linda", "sean"]:
+        return jsonify({"error": 'Invalid recipient. Must be "linda" or "sean"'}), 400
 
     # Update snooze state
     state = load_snooze_state()
     state[recipient] = snoozed
     save_snooze_state(state)
 
-    logger.info(f"{'😴' if snoozed else '🔔'} {recipient.capitalize()} snooze set to {snoozed}")
+    logger.info(
+        f"{'😴' if snoozed else '🔔'} {recipient.capitalize()} snooze set to {snoozed}"
+    )
 
     # If form submission, redirect back to home page
     if not request.is_json:
-        return redirect('/')
+        return redirect("/")
 
-    return jsonify({
-        'success': True,
-        'recipient': recipient,
-        'snoozed': snoozed,
-        'state': state,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "recipient": recipient,
+            "snoozed": snoozed,
+            "state": state,
+        }
+    )
 
 
-@app.route('/admin/test-sms', methods=['POST'])
+@app.route("/admin/test-sms", methods=["POST"])
 def test_sms():
     """
     Send a test SMS to verify configuration.
-    
+
     POST /admin/test-sms
     Body: {"to": "+1XXXXXXXXXX"} (optional, defaults to first NOTIFY_NUMBER)
     """
     if not telnyx_client:
-        return jsonify({'error': 'Telnyx API key not configured'}), 500
-    
+        return jsonify({"error": "Telnyx API key not configured"}), 500
+
     if not TELNYX_PHONE_NUMBER:
-        return jsonify({'error': 'Telnyx phone number not configured'}), 500
-    
+        return jsonify({"error": "Telnyx phone number not configured"}), 500
+
     data = request.get_json() or {}
-    to_number = data.get('to') or (NOTIFY_NUMBERS[0] if NOTIFY_NUMBERS else None)
-    
+    to_number = data.get("to") or (NOTIFY_NUMBERS[0] if NOTIFY_NUMBERS else None)
+
     if not to_number:
-        return jsonify({'error': 'No phone number provided and NOTIFY_NUMBERS is empty'}), 400
-    
+        return jsonify(
+            {"error": "No phone number provided and NOTIFY_NUMBERS is empty"}
+        ), 400
+
     try:
         telnyx_client.messages.send(
             from_=TELNYX_PHONE_NUMBER,
@@ -1604,52 +1712,60 @@ def test_sms():
             text="🧪 Test message from let-food-into-civic! Your SMS notifications are working.",
         )
         logger.info(f"Test SMS sent to {to_number}")
-        return jsonify({
-            'success': True,
-            'to': to_number,
-        })
+        return jsonify(
+            {
+                "success": True,
+                "to": to_number,
+            }
+        )
     except Exception as e:
         logger.error(f"Failed to send test SMS: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/admin/call-logs', methods=['GET'])
+@app.route("/admin/call-logs", methods=["GET"])
 def get_call_logs():
     """
     Query recent call logs from Telnyx.
-    
+
     GET /admin/call-logs?limit=10
     """
     if not telnyx_client:
-        return jsonify({'error': 'Telnyx API key not configured'}), 500
-    
-    limit = request.args.get('limit', 10, type=int)
-    
+        return jsonify({"error": "Telnyx API key not configured"}), 500
+
+    limit = request.args.get("limit", 10, type=int)
+
     try:
         # Query call events/CDRs
         calls = telnyx_client.call_events.list(page_size=limit)
-        
+
         call_list = []
         for call in calls.data:
-            call_list.append({
-                'id': getattr(call, 'id', 'N/A'),
-                'from': getattr(call, 'from_', getattr(call, 'caller_id_number', 'N/A')),
-                'to': getattr(call, 'to', getattr(call, 'destination_number', 'N/A')),
-                'type': getattr(call, 'event_type', 'N/A'),
-                'occurred_at': str(getattr(call, 'occurred_at', 'N/A')),
-            })
-        
-        return jsonify({'calls': call_list, 'count': len(call_list)})
+            call_list.append(
+                {
+                    "id": getattr(call, "id", "N/A"),
+                    "from": getattr(
+                        call, "from_", getattr(call, "caller_id_number", "N/A")
+                    ),
+                    "to": getattr(
+                        call, "to", getattr(call, "destination_number", "N/A")
+                    ),
+                    "type": getattr(call, "event_type", "N/A"),
+                    "occurred_at": str(getattr(call, "occurred_at", "N/A")),
+                }
+            )
+
+        return jsonify({"calls": call_list, "count": len(call_list)})
     except Exception as e:
         logger.error(f"Failed to fetch call logs: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/admin/buy-number', methods=['POST'])
+@app.route("/admin/buy-number", methods=["POST"])
 def buy_number():
     """
     Search for available phone numbers.
-    
+
     POST /admin/buy-number
     Body: {
         "area_code": "415",      # Optional: area code to search
@@ -1657,25 +1773,25 @@ def buy_number():
     }
     """
     if not telnyx_client:
-        return jsonify({'error': 'Telnyx API key not configured'}), 500
-    
+        return jsonify({"error": "Telnyx API key not configured"}), 500
+
     data = request.get_json() or {}
-    area_code = data.get('area_code', '214')
-    country = data.get('country', 'US')
-    
+    area_code = data.get("area_code", "214")
+    country = data.get("country", "US")
+
     try:
         # Search for available numbers
         response = telnyx_client.available_phone_numbers.list(
             filter={
-                'country_code': country,
-                'national_destination_code': area_code,
-                'limit': 5,
+                "country_code": country,
+                "national_destination_code": area_code,
+                "limit": 5,
             }
         )
-        
+
         if not response.data:
-            return jsonify({'error': 'No numbers found matching criteria'}), 404
-        
+            return jsonify({"error": "No numbers found matching criteria"}), 404
+
         # Return available numbers for selection
         numbers = []
         for n in response.data:
@@ -1685,77 +1801,90 @@ def buy_number():
                     if r.region_type == "rate_center":
                         location = r.region_name
                         break
-            numbers.append({
-                'phone_number': n.phone_number,
-                'location': location,
-                'monthly_cost': n.cost_information.monthly_cost if n.cost_information else 'N/A',
-            })
-        
-        return jsonify({
-            'available_numbers': numbers,
-            'message': 'Use POST /admin/buy-number/confirm with {"phone_number": "..."} to purchase',
-        })
+            numbers.append(
+                {
+                    "phone_number": n.phone_number,
+                    "location": location,
+                    "monthly_cost": n.cost_information.monthly_cost
+                    if n.cost_information
+                    else "N/A",
+                }
+            )
+
+        return jsonify(
+            {
+                "available_numbers": numbers,
+                "message": 'Use POST /admin/buy-number/confirm with {"phone_number": "..."} to purchase',
+            }
+        )
     except Exception as e:
         logger.error(f"Failed to search numbers: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/admin/buy-number/confirm', methods=['POST'])
+@app.route("/admin/buy-number/confirm", methods=["POST"])
 def confirm_buy_number():
     """
     Confirm purchase of a specific phone number.
-    
+
     POST /admin/buy-number/confirm
     Body: {"phone_number": "+14155551234"}
     """
     if not telnyx_client:
-        return jsonify({'error': 'Telnyx API key not configured'}), 500
-    
+        return jsonify({"error": "Telnyx API key not configured"}), 500
+
     data = request.get_json() or {}
-    phone_number = data.get('phone_number')
-    
+    phone_number = data.get("phone_number")
+
     if not phone_number:
-        return jsonify({'error': 'phone_number is required'}), 400
-    
+        return jsonify({"error": "phone_number is required"}), 400
+
     try:
         # Order the phone number
         order = telnyx_client.number_orders.create(
-            phone_numbers=[{'phone_number': phone_number}]
+            phone_numbers=[{"phone_number": phone_number}]
         )
-        
+
         logger.info(f"📱 Purchased phone number: {phone_number}")
-        
-        return jsonify({
-            'success': True,
-            'phone_number': phone_number,
-            'message': 'Number purchased! Remember to set up messaging profile for SMS.',
-        })
+
+        return jsonify(
+            {
+                "success": True,
+                "phone_number": phone_number,
+                "message": "Number purchased! Remember to set up messaging profile for SMS.",
+            }
+        )
     except Exception as e:
         logger.error(f"Failed to purchase number: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 # =============================================================================
 # Main Entry Point
 # =============================================================================
 
+
 def main():
     """Main entry point for the service."""
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8080"))
     debug = os.getenv("DEBUG", "false").lower() == "true"
-    
+
     logger.info("🍕 let-food-into-civic starting up...")
     logger.info(f"Configuration:")
     logger.info(f"  - Unlock digit: {UNLOCK_DIGIT}")
-    logger.info(f"  - Tone repeats: {TONE_DURATION_REPEATS} (~{TONE_DURATION_REPEATS * 0.25}s)")
+    logger.info(
+        f"  - Tone repeats: {TONE_DURATION_REPEATS} (~{TONE_DURATION_REPEATS * 0.25}s)"
+    )
     logger.info(f"  - Pause duration: {PAUSE_DURATION}s")
     logger.info(f"  - Iterations: {ITERATIONS}")
-    logger.info(f"  - Telnyx API: {'✅ Configured' if TELNYX_API_KEY else '❌ Not configured'}")
+    logger.info(
+        f"  - Telnyx API: {'✅ Configured' if TELNYX_API_KEY else '❌ Not configured'}"
+    )
     logger.info(f"  - Telnyx number: {TELNYX_PHONE_NUMBER or 'Not configured'}")
     logger.info(f"  - Notify numbers: {NOTIFY_NUMBERS or 'None configured'}")
     logger.info(f"  - Listening on: {host}:{port}")
-    
+
     app.run(host=host, port=port, debug=debug)
 
 

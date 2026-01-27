@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gate Unlock Event Log",
+  "description": "Array of gate unlock events for historical analysis",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "description": "A single gate unlock event",
+    "properties": {
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "description": "UTC timestamp in ISO8601 format (e.g., 2026-01-27T12:30:45.123Z)"
+      }
+    },
+    "required": ["timestamp"],
+    "additionalProperties": false
+  }
+}

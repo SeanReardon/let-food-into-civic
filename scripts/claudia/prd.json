@@ -119,7 +119,7 @@
         "Events are stored in chronological order"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Keep the schema simple - just timestamp for now. Future events could add caller_id or other metadata. Use /app/data/events.json to persist across container restarts."
     },
     {
@@ -133,7 +133,7 @@
         "Event is recorded regardless of SMS success/failure"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "This captures every gate unlock event for historical analysis. The timestamp should be datetime.utcnow().isoformat() + 'Z' for proper UTC ISO8601."
     },
     {

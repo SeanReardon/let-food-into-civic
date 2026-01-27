@@ -110,3 +110,40 @@ Added view toggle buttons that allow local users to preview the public landing p
 - 6 test cases verified: local/remote with view=public, view=local, and default
 
 ---
+
+## 2026-01-27: Batch foundation - let-food-into-civic-00008, let-food-into-civic-00009 - Create event logging system
+
+### Summary
+Implemented JSON schema and logging functions for gate unlock events. Created event.json file to persist unlock timestamps and integrated logging into voice webhook. Foundation for future analytics features.
+
+### Files Changed
+- src/main.py (added event logging functions and webhook integration)
+- schemas/log.schema.json (created JSON schema)
+- scripts/claudia/prd.json (marked tasks 00008, 00009 as passes: true)
+
+### Implementation Details
+
+Task 00008 - Schema:
+- Created schemas/log.schema.json defining events array structure
+- Required field: timestamp (ISO8601 UTC string format)
+- Simple extensible schema for future metadata fields (caller_id, etc.)
+
+Task 00009 - logging functions and webhook integration:
+- Added EVENTS_FILE constant (/app/data/events.json)
+- Created load_events(): loads events, returns empty array if file missing
+- Created save_events(events): writes events to file atomically
+- Created append_event(timestamp): adds new event chronologically (newest at end)
+- Modified handle_incoming_call() webhook to log event before SMS notifications
+- Event recorded with datetime.utcnow().isoformat() + "Z" for proper UTC format
+- Event logged regardless of SMS success/failure
+- Existing app.log logging unchanged
+
+### Verification
+- Python syntax check passed
+- Schema JSON validation passed
+- Tested: load_events creates empty array if file missing
+- Tested: append_event adds event correctly
+- Tested: Events stored chronologically (appended to array end)
+- Tested: JSON structure validated against schema
+
+---
