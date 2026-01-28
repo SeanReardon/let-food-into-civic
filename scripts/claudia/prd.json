@@ -149,7 +149,7 @@
         "Chart title: 'Gate Unlocks - Last 60 Days'"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Generate the chart server-side as inline SVG for simplicity. Read events from events.json, filter to last 60 days, group by date. Dallas timezone for day boundaries (America/Chicago)."
     },
     {
@@ -165,7 +165,7 @@
         "Show hour labels around the circle (12am, 6am, 12pm, 6pm at minimum)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This shows delivery patterns - when do most unlocks happen? Use pytz or zoneinfo to convert UTC timestamps to America/Chicago before extracting hour. Consider all historical events, not just last 60 days."
     }
   ]

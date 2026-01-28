@@ -14,8 +14,9 @@ import logging
 import os
 import sys
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import Flask, Response, request, jsonify, redirect
@@ -404,7 +405,208 @@ def append_event(timestamp):
     events = load_events()
     events.append({"timestamp": timestamp})
     save_events(events)
-    logger.debug(f"📝 Recorded unlock event at {timestamp}")
+
+
+# =============================================================================
+# Chart Generation
+# =============================================================================
+TZ_DALLAS = ZoneInfo("America/Chicago")
+
+
+def generate_daily_histogram():
+    """
+    Generate SVG histogram showing events per day over last 60 days.
+    Returns SVG string or None if no data.
+    """
+    events = load_events()
+    if not events:
+        return None
+
+    today = datetime.now(TZ_DALLAS)
+    days_back = 60
+    daily_counts = {i: 0 for i in range(days_back)}
+
+    for event in events:
+        ts_str = event.get("timestamp")
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            ts_dallas = ts.astimezone(TZ_DALLAS)
+            days_ago = (today - ts_dallas).days
+            if 0 <= days_ago < days_back:
+                daily_counts[days_ago] += 1
+        except Exception as e:
+            logger.debug(f"Failed to parse timestamp: {ts_str}, {e}")
+            continue
+
+    max_count = max(daily_counts.values()) if daily_counts else 1
+    chart_width = 600
+    chart_height = 200
+    bar_width = (chart_width - 140) / days_back
+    margin_left = 80
+    margin_bottom = 30
+    margin_top = 30
+
+    svg_parts = [
+        f'<svg width="{chart_width}" height="{chart_height}" xmlns="http://www.w3.org/2000/svg">',
+        f"</svg>",
+    ]
+
+    bars = []
+    day_labels = []
+
+    for day_idx in range(days_back):
+        count = daily_counts.get(day_idx, 0)
+        x = margin_left + day_idx * bar_width
+        if max_count > 0:
+            bar_height = (count / max_count) * (
+                chart_height - margin_bottom - margin_top
+            )
+        else:
+            bar_height = 0
+        y = chart_height - margin_bottom - bar_height
+
+        if count > 0:
+            opacity = min(0.3 + (count / max_count) * 0.7, 1)
+            bars.append(
+                f'<rect x="{x}" y="{y}" width="{bar_width - 1}" height="{bar_height}" '
+                f'fill="#b45309" opacity="{opacity}" rx="2"/>'
+            )
+        else:
+            bars.append(
+                f'<rect x="{x}" y="{chart_height - margin_bottom - 1}" width="{bar_width - 1}" height="1" '
+                f'fill="#e7e5e4" opacity="0.5" rx="2"/>'
+            )
+
+        if day_idx == 0:
+            day_labels.append(
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">Today</text>'
+            )
+        elif day_idx == 29:
+            day_labels.append(
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">30 days</text>'
+            )
+        elif day_idx == 59:
+            start_date = today - timedelta(days=59)
+            day_labels.append(
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">{start_date.strftime("%b")}</text>'
+            )
+
+    svg_content = [
+        '<svg width="600" height="200" xmlns="http://www.w3.org/2000/svg">',
+        f'<text x="300" y="20" font-size="12" font-weight="600" fill="#1c1917" text-anchor="middle">Gate Unlocks - Last 60 Days</text>',
+    ]
+
+    if max_count > 0:
+        y_axis_labels = [
+            f'<text x="70" y="{margin_top + i * (chart_height - margin_bottom - margin_top) / 4}" font-size="9" fill="#a8a29e" text-anchor="end">{int(max_count * (1 - i / 4))}</text>'
+            for i in range(5)
+        ]
+        svg_content.extend(y_axis_labels)
+
+    svg_content.extend(bars)
+    svg_content.extend(day_labels)
+    svg_content.extend(
+        [
+            '<line x1="80" y1="170" x2="590" y2="170" stroke="#e7e5e4" stroke-width="1"/>',
+            "</svg>",
+        ]
+    )
+
+    return "\n".join(svg_content)
+
+
+def generate_polar_chart():
+    """
+    Generate SVG polar chart showing hourly distribution of unlock events.
+    Returns SVG string or None if no data.
+    """
+    events = load_events()
+    if not events:
+        return None
+
+    hourly_counts = {h: 0 for h in range(24)}
+    total_events = 0
+
+    for event in events:
+        ts_str = event.get("timestamp")
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            ts_dallas = ts.astimezone(TZ_DALLAS)
+            hour = ts_dallas.hour
+            hourly_counts[hour] += 1
+            total_events += 1
+        except Exception as e:
+            logger.debug(f"Failed to parse timestamp: {ts_str}, {e}")
+            continue
+
+    if total_events == 0:
+        return None
+
+    svg_size = 200
+    center = svg_size / 2
+    outer_radius = 70
+    inner_radius = 20
+    segment_angle = 360 / 24
+
+    max_count = max(hourly_counts.values())
+
+    svg_parts = [
+        f'<svg width="{svg_size}" height="{svg_size}" xmlns="http://www.w3.org/2000/svg">',
+    ]
+
+    for hour in range(24):
+        count = hourly_counts[hour]
+
+        if max_count > 0:
+            outer_r = inner_radius + (count / max_count) * (outer_radius - inner_radius)
+        else:
+            outer_r = inner_radius
+
+        base_angle_deg = (hour + 18) * segment_angle
+
+        if count > 0:
+            opacity = min(0.2 + (count / max_count) * 0.6, 1)
+        else:
+            opacity = 0.1
+
+        start_x = center
+        start_y = center
+        end_y = center - outer_r + 5
+
+        svg_parts.append(
+            f'<line x1="{start_x}" y1="{start_y}" x2="{start_x}" y2="{end_y}" '
+            f'stroke="#b45309" stroke-width="6" stroke-opacity="{opacity}" '
+            f'stroke-linecap="round" transform="rotate({base_angle_deg - 90} {center} {center})"/>'
+        )
+
+    for hour in range(0, 24, 6):
+        if hour == 0:
+            label_text = "12am"
+        elif hour == 6:
+            label_text = "6am"
+        elif hour == 12:
+            label_text = "12pm"
+        elif hour == 18:
+            label_text = "6pm"
+        else:
+            continue
+
+        svg_parts.append(
+            f'<text x="{center}" y="{12 + hour // 6 * 50}" font-size="9" fill="#a8a29e" text-anchor="middle">{label_text}</text>'
+        )
+
+    svg_parts.extend(
+        [
+            f'<text x="{center}" y="{center + 5}" font-size="10" font-weight="600" fill="#1c1917" text-anchor="middle">Unlock Times</text>',
+            "</svg>",
+        ]
+    )
+
+    return "\n".join(svg_parts)
 
 
 # Initialize opt-ins for configured numbers (auto-opt-in for initial setup)
@@ -974,6 +1176,29 @@ def render_snooze_ui():
                 color: var(--text-muted);
             }}
 
+            .charts-section {{
+                margin-top: 40px;
+            }}
+
+            .charts-section h2 {{
+                font-family: \'Source Serif 4\', Georgia, serif;
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin-bottom: 20px;
+                text-align: center;
+                color: var(--text);
+            }}
+
+            .chart-container {{
+                margin-bottom: 32px;
+                text-align: center;
+            }}
+
+            .chart-container svg {{
+                max-width: 100%;
+                height: auto;
+            }}
+
             footer {{
                 text-align: center;
                 margin-top: 40px;
@@ -1027,6 +1252,16 @@ def render_snooze_ui():
                 <div class="status-row">
                     <span class="status-label">Notification status</span>
                     <span class="status-value {"snoozed" if sean_snoozed else "active"}">{sean_status}</span>
+                </div>
+            </div>
+
+            <div class="charts-section">
+                <h2>Analytics</h2>
+                <div class="chart-container">
+                    {generate_daily_histogram() or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
+                </div>
+                <div class="chart-container">
+                    {generate_polar_chart() or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
                 </div>
             </div>
 

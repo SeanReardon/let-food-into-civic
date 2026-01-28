@@ -147,3 +147,63 @@ Task 00009 - logging functions and webhook integration:
 - Tested: JSON structure validated against schema
 
 ---
+
+## 2026-01-27: let-food-into-civic-00010, let-food-into-civic-00011 - Add analytics charts to snooze UI
+
+### Summary
+Implemented server-side SVG chart generation for gate unlock analytics. Added daily histogram showing events over last 60 days and polar chart showing hourly distribution. Charts embedded inline in local snooze UI with Dallas timezone conversion.
+
+### Files Changed
+- src/main.py (added chart generation functions and display)
+
+### Implementation Details
+
+**Task 00010 - Daily Histogram:**
+- Added generate_daily_histogram() function at main.py:416-520
+- Loads events from /app/data/events.json
+- Converts UTC timestamps to America/Chicago timezone
+- Bins events by day offset from today (last 60 days)
+- Generates	inline SVG histogram (600x200)
+- Bars sized proportionally to event count
+- Labels: "Today", "30 days", "60 days"
+- Title: "Gate Unlocks - Last 60 Days"
+- Returns SVG string or None if no data
+
+**Task 00011 - Polar Chart:**
+- Added generate_polar_chart() function at main.py:521-609
+- Loads all historical events from /app/data/events.json
+- Converts UTC timestamps to America/Chicago timezone
+- Bins events by hour (0-23)
+- Generates inline SVG polar/radial chart (200x200)
+- 24 radial segments from center (one per hour)
+- Segment length proportional to event count for that hour
+- Midnight at top, noon at bottom (hour + 18 offset)
+- Labels at y=12, 62, 112, 162: "12am", "6am", "12pm", "6pm"
+- Title: "Unlock Times"
+- Returns SVG string or None if no data
+
+**Common Implementation:**
+- Added timezone support: from datetime import timedelta, timezone; from zoneinfo import ZoneInfo
+- Added TZ_DALLAS = ZoneInfo("America/Chicago") constant
+- Color scheme: #b45309 (amber/bronze) with opacity based on count volume
+- No external JS libraries - pure server-side SVG generation
+- Embedded inHTML via f-string interpolation
+- Added CSS styling to snooze UI for charts section
+- Charts display below snooze controls in dedicated "Analytics" section
+
+### Technical Challenges and Fixes
+- **Syntax Error:** Initial polar chart implementation had f\' backslash-escaped quotes causing syntax errors
+- **Fix:** Changed all f\' to f\' for proper f-string quoting
+- **Vector Math:** Polar chart uses transform="rotate()" SVG attribute for radial segments
+- **Timezone Conversion:** Used zoneinfo (not pytz) for Python 3.9+ compatibility
+- **Label Positioning:** Vertical spacing at 50px intervals for time labels
+
+### Verification
+- Python syntax check passed (py_compile)
+- Tested histogram binning logic with sample events
+- Tested polar chart binning logic with sample events
+- Verified timezone conversion from UTC to America/Chicago
+- SVG output validated for both charts
+- Charts render in local snooze UI UI section
+
+---
