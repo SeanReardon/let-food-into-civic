@@ -1,0 +1,346 @@
+=== PROMPT ===
+# Claudia Agent Instructions
+
+You are an autonomous coding agent working in the `let-food-into-civic` repo.
+
+## Repo Context
+
+# CLAUDE.md
+
+## What This Project Does
+
+**let-food-into-civic** is a home automation service that automatically unlocks an apartment call box for food deliveries. When a delivery person dials the Telnyx phone number from the call box, the service answers and plays DTMF tone "5" repeatedly to unlock the gate, then sends SMS notifications to household members.
+
+## Project Structure
+
+```
+src/
+  main.py          # Flask app with all endpoints and business logic
+static/
+  dtmf5-2sec.wav   # Pre-recorded DTMF tone file
+scripts/claudia/   # Claudia agent metadata (PRD, progress)
+schemas/           # JSON schemas for Claudia
+```
+
+## Key Technologies
+
+- **Flask** - Web framework handling webhooks
+- **Telnyx** - Telephony provider for voice calls and SMS
+- **TeXML/TwiML** - XML-based response format for call handling
+- **Docker** - Container deployment
+
+## Running the Project
+
+```bash
+# Local development
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # Edit with your Telnyx credentials
+python -m src.main
+
+# Docker
+docker compose up -d
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TELNYX_LET_FOOD_INTO_CIVIC_KEY` | Yes | Telnyx API key |
+| `TELNYX_PHONE_NUMBER` | Yes | Toll-free number for SMS (E.164 format) |
+| `NOTIFY_NUMBERS` | No | Comma-separated phone numbers to notify |
+| `UNLOCK_DIGIT` | No | DTMF digit (default: "5") |
+
+## API Endpoints
+
+- `POST /webhook/voice` - Telnyx voice webhook (answers calls, plays DTMF)
+- `POST /webhook/sms` - Telnyx SMS webhook (handles STOP/HELP/START)
+- `GET /health` - Container health check
+- `GET /sms-consent` - CTIA-compliant consent page for toll-free verification
+- `POST /admin/test-sms` - Send test SMS
+
+## Important Patterns
+
+1. **Phone number normalization**: All numbers are normalized to E.164 format on startup
+2. **Opt-in/opt-out**: CTIA-compliant system tracks consent in `/app/data/opt-in-flow/`
+3. **Async SMS**: Notifications are sent in background threads to avoid blocking webhook responses
+4. **Pre-recorded DTMF**: Uses audio file instead of `<Play digits>` because TwiML only supports short tones
+
+## Testing
+
+```bash
+# Test webhook locally
+curl -X POST http://localhost:8080/webhook/voice -d "From=+15551234567"
+
+# Test SMS
+curl -X POST http://localhost:8080/admin/test-sms
+```
+
+## Do Not Modify
+
+- `static/dtmf5-2sec.wav` - Pre-recorded DTMF tone file
+- Toll-free verification compliance text in `/sms-consent` without careful review
+
+
+## Task Selection (Your Choice)
+
+Below are ALL incomplete tasks from the PRD. **You decide** which tasks to work on.
+
+**Selection Criteria** (use your best judgment):
+
+1. **Meaningful Impact**: Choose tasks that deliver real value, not busywork
+2. **Unblocking Power**: Strongly prefer tasks that unblock other tasks
+3. **No Mutual Blocks**: Don't pick tasks where one blocks another
+4. **Coherent Batch**: Tasks should make sense together (related area, shared context)
+5. **Achievable**: Tasks you can actually complete in this session
+
+**Maximum tasks this session**: 5 (but less than 5 is fine if that's all there is!)
+
+**Pro tip**: If you see a dense, complex task that really needs to be broken down:
+- Create several smaller PRD tasks that decompose the problem
+- Rewrite the original task as a simpler "integration and verification" task
+- Mark the original as blocked, add the new tasks, then work on the decomposed ones
+- This is the RIGHT way to handle complexity - don't try to brute-force a messy task
+
+## Incomplete Tasks
+
+### let-food-into-civic-00008 - Create JSON schema and log file for gate unlock events
+**Priority**: 2
+**Acceptance Criteria:**
+   - Create schemas/log.schema.json defining the event log structure
+   - Schema defines an array of event objects with 'timestamp' field (ISO8601 UTC string)
+   - Create /app/data/events.json log file (empty array if doesn't exist)
+   - Add load_events() function to read events from file
+   - Add append_event(timestamp) function to add new event and save
+   - Events are stored in chronological order
+**Notes:** Keep the schema simple - just timestamp for now. Future events could add caller_id or other metadata. Use /app/data/events.json to persist across container restarts.
+
+### let-food-into-civic-00009 - Log gate unlock events when voice webhook is triggered
+**Priority**: 3
+**Acceptance Criteria:**
+   - In handle_incoming_call(), record event timestamp in UTC ISO8601 format
+   - Call append_event() to persist the event to events.json
+   - Log entry happens before SMS notifications are sent
+   - Existing logging behavior unchanged (still logs to app.log)
+   - Event is recorded regardless of SMS success/failure
+**Notes:** This captures every gate unlock event for historical analysis. The timestamp should be datetime.utcnow().isoformat() + 'Z' for proper UTC ISO8601.
+
+### let-food-into-civic-00010 - Add daily histogram chart showing events per day over last 60 days
+**Priority**: 4
+**Acceptance Criteria:**
+   - On local snooze UI, display a histogram chart below the snooze controls
+   - X-axis: last 60 days (most recent on right)
+   - Y-axis: count of events per day
+   - Use inline SVG or simple HTML/CSS bars (no external JS libraries)
+   - Days with zero events show as empty/minimal bar
+   - Show date labels for first day, last day, and maybe middle
+   - Chart title: 'Gate Unlocks - Last 60 Days'
+**Notes:** Generate the chart server-side as inline SVG for simplicity. Read events from events.json, filter to last 60 days, group by date. Dallas timezone for day boundaries (America/Chicago).
+
+### let-food-into-civic-00011 - Add polar chart showing time-of-day distribution of gate unlock events
+**Priority**: 5
+**Acceptance Criteria:**
+   - On local snooze UI, display a polar/radial chart showing hourly distribution
+   - 24 segments representing hours of the day (midnight at top, noon at bottom)
+   - Segment size/color intensity based on event count for that hour
+   - Times converted to Dallas timezone (America/Chicago) before binning
+   - Use inline SVG (no external JS libraries)
+   - Chart title: 'Unlock Times (Dallas)'
+   - Show hour labels around the circle (12am, 6am, 12pm, 6pm at minimum)
+**Notes:** This shows delivery patterns - when do most unlocks happen? Use pytz or zoneinfo to convert UTC timestamps to America/Chicago before extracting hour. Consider all historical events, not just last 60 days.
+
+
+## Your Workflow
+
+### Phase 1: Task Selection
+
+First, analyze the incomplete tasks and select up to 5 tasks to work on.
+Output your selection:
+
+```
+<task-selection>
+Selected tasks (in order I'll work on them):
+1. task-id-1: Reason for selection
+2. task-id-2: Reason for selection
+...
+
+Skipped tasks:
+- task-id-X: Blocked by task-id-Y
+- task-id-Z: Too complex, needs decomposition (will create subtasks)
+...
+</task-selection>
+```
+
+### Phase 2: Implementation
+
+For each selected task:
+1. Implement the feature/fix to satisfy acceptance criteria
+2. Run quality checks (lint, test, typecheck as appropriate)
+3. If learnings emerge, update `CLAUDE.md`
+4. If a task blocks, note the blocker and continue to the next task
+
+### Phase 3: Decomposing Complex Tasks (when needed)
+
+If you encounter a task that's too complex:
+
+1. **Create subtasks**: Add new tasks to `prd.json` with:
+   - `id`: `let-food-into-civic-NNNNN` (next available number)
+   - `priority`: Same or higher than parent task
+   - `passes`: false
+   - Clear, focused acceptance criteria
+
+2. **Rewrite parent task**: Update the original complex task to be:
+   - A simpler "integration and verification" task
+   - Assumes subtasks are complete
+   - Example: "Verify all auth components work together end-to-end"
+
+3. **Mark parent as blocked**: Add note explaining it depends on subtasks
+
+This is NOT failure - this is good engineering. Complex problems need decomposition.
+
+### Phase 4: Documentation
+
+**Update progress.txt** (REQUIRED):
+- Append to `scripts/claudia/progress.txt`
+- Add an entry for EACH completed task:
+  ```
+  ## YYYY-MM-DD: task-id - Task Title
+
+  ### Summary
+  [1-2 sentence summary of what was implemented]
+
+  ### Files Changed
+  - file1.py
+  - file2.ts
+
+  ### Learnings
+  [Optional: patterns discovered, gotchas encountered]
+  ---
+  ```
+
+### Phase 5: Finalization
+
+1. **Update prd.json**: Set `passes: true` for completed tasks only
+   - Only mark complete if ALL acceptance criteria are satisfied
+   - Leave blocked/incomplete tasks as `passes: false`
+
+2. **BUILD VERIFICATION** (before pushing):
+   - Check the repo's CLAUDE.md for build/test commands specific to this project
+   - If Dockerfiles exist, build them locally to verify no syntax errors
+   - Run any linting, type-checking, or test commands mentioned in CLAUDE.md
+   - Fix any build failures before proceeding
+
+3. **Commit**: `feat: batch - <summary of completed tasks>`
+
+4. **Push**: `git push origin main`
+
+5. **VERIFY GITHUB ACTION**:
+   - Run: `gh run list --limit 1 --json databaseId,status,conclusion`
+   - Poll every 30 seconds until `status` is `completed` (max 10 minutes)
+   - If `conclusion` is `failure`:
+     a. Run `gh run view <databaseId> --log-failed`
+     b. Add priority 0 fix task to prd.json
+     c. Commit and push
+
+### Phase 6: Report Results
+
+```
+<batch-results>
+task-id-1: COMPLETE | BLOCKED: <reason>
+task-id-2: COMPLETE | BLOCKED: <reason>
+...
+</batch-results>
+```
+
+Overall status:
+- All completed: `<promise>COMPLETE</promise>`
+- Some completed: `<promise>PARTIAL: X of N completed</promise>`
+- All blocked: `<promise>BLOCKED: reason</promise>`
+
+## Playwright Browser Testing
+
+For UI-related acceptance criteria:
+- **Chromium is pre-installed** via Playwright
+- Write tests in `tests/test_*.py` using `from playwright.sync_api import Page`
+- Run: `pytest --browser chromium --headless`
+- **ALWAYS verify clickable elements actually work before marking tasks complete**
+
+## PRD Summary
+
+✓ [P1] let-food-into-civic-00006: Update contact email to contact@contrived.com
+✓ [P1] let-food-into-civic-00001: Add network detection helper to distinguish local vs remote requests
+✓ [P2] let-food-into-civic-00002: Add persistent snooze state file for per-recipient notifications
+✓ [P3] let-food-into-civic-00003: Create local-only snooze UI for managing recipient notifications
+✓ [P4] let-food-into-civic-00004: Add endpoint to snooze/unsnooze recipient notifications
+✓ [P5] let-food-into-civic-00005: Modify SMS notification logic to respect snooze state and auto-reset
+✓ [P1] let-food-into-civic-00007: Add toggle button to switch between local snooze UI and public landing page views
+○ [P2] let-food-into-civic-00008: Create JSON schema and log file for gate unlock events
+○ [P3] let-food-into-civic-00009: Log gate unlock events when voice webhook is triggered
+○ [P4] let-food-into-civic-00010: Add daily histogram chart showing events per day over last 60 days
+○ [P5] let-food-into-civic-00011: Add polar chart showing time-of-day distribution of gate unlock events
+
+## Recent Progress
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added render_snooze_ui() function generating the local-only UI
+- Refactored index() to check is_local_network() and return appropriate page
+- UI shows recipient cards with name, formatted phone number, and toggle button
+- Toggle buttons submit forms to POST /admin/snooze endpoint
+- Info box explains snooze behavior (skips next event only, auto-resets)
+- Added POST /admin/snooze endpoint that validates recipient, updates state, and redirects
+- Endpoint returns 403 for remote requests, accepts both JSON and form data
+- Modified send_sms_notifications() to check snooze state and skip snoozed recipients
+- Added reset_all_snooze() call after notifications complete (regardless of success/failure)
+
+---
+
+## 2026-01-27: Batch verification - Tasks 00001, 00002, 00003
+
+### Summary
+Verified that all three snooze feature tasks (00001, 00002, 00003) were fully implemented and meet all acceptance criteria. Updated prd.json to mark them as passes: true.
+
+### Verification Details
+- **00001**: is_local_network() function at main.py:74-114 correctly detects private IPs, localhost, and handles X-Forwarded-For
+- **00002**: Snooze state persistence at /app/data/snooze.json with load/save functions at main.py:290-344
+- **00003**: Local-only snooze UI with render_snooze_ui() at main.py:699-941, mobile-friendly with large toggle buttons
+
+### Files Changed
+- scripts/claudia/prd.json (marked 3 tasks as passes: true)
+
+---
+
+## 2026-01-27: let-food-into-civic-00007 - Add toggle button to switch between local snooze UI and public landing page views
+
+### Summary
+Added view toggle buttons that allow local users to preview the public landing page and remote users to see a "View Local Controls" option (which returns 403 if accessed remotely). Implemented ?view= query parameter to override automatic network detection.
+
+### Files Changed
+- src/main.py
+
+### Implementation Details
+- Added "View Public Page" button to snooze UI footer (links to /?view=public)
+- Added "View Local Controls" button to public landing page footer (links to /?view=local)
+- Updated index() route to handle ?view= query parameter:
+  - ?view=public: Shows public page (works from anywhere)
+  - ?view=local: Shows snooze UI if local, returns 403 JSON if remote
+  - No param: Uses automatic network detection (existing behavior)
+- Button styling matches existing page design (subtle, bordered buttons)
+- 6 test cases verified: local/remote with view=public, view=local, and default
+
+---
+
+## Important Reminders
+
+- **You have agency**: Choose tasks wisely, not just by priority number
+- **Unblocking is valuable**: A task that unblocks 3 others is often worth more than a higher-priority isolated task
+- **Decomposition is good**: Breaking down complex tasks is the RIGHT approach
+- **Quality over quantity**: Better to complete 3 tasks well than 5 tasks poorly
+- **Verify before marking complete**: Use Playwright for UI tasks, run tests, check the actual behavior
+
+
+=== OPENCODE COMMAND ===
+opencode run --model inference-server/zai-org/GLM-4.7-FP8 --agent build --format json --log-level ERROR "<prompt>"
