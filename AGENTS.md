@@ -74,3 +74,12 @@ curl -X POST http://localhost:8080/admin/test-sms
 
 - `static/dtmf5-2sec.wav` - Pre-recorded DTMF tone file
 - Toll-free verification compliance text in `/sms-consent` without careful review
+
+## Deploy Auth Responsibilities
+
+- Deployment auth is infra-owned in `homelab-infra` and read at runtime from Vault.
+- Canonical deploy-auth path for this repo: `secret/homelab/deploy-auth/let-food-into-civic`.
+- The deploy PAT from that path is used for both HTTPS git fetch and GHCR image pulls.
+- This repo continues to own only its application secret schema/policies in Vault.
+- Do not rely on persistent deployment creds in `~/.docker/config.json` or `~/.git-credentials`.
+
