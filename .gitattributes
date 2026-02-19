@@ -1,0 +1,37 @@
+# Normalize line endings across platforms
+* text=auto eol=lf
+
+# Explicit text formats
+*.sh     text eol=lf
+*.bash   text eol=lf
+*.zsh    text eol=lf
+*.py     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+*.env    text eol=lf
+
+# Docker / CI
+Dockerfile      text eol=lf
+*.dockerfile   text eol=lf
+*.tf           text eol=lf
+*.tfvars       text eol=lf
+
+# Scripts
+*.ps1   text eol=lf
+*.cmd   text eol=lf
+
+# Treat binaries as binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.7z    binary
