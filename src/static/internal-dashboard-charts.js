@@ -145,11 +145,6 @@
       '" fill="none" stroke="#334155" stroke-width="1"/>' +
       bars +
       labels +
-      '<text x="' +
-      c +
-      '" y="' +
-      (c + 4) +
-      '" font-size="11" fill="#e5e7eb" text-anchor="middle">Local Hours</text>' +
       "</svg>";
   }
 
@@ -211,6 +206,33 @@
       })
       .join("");
 
+    const yTicks = [];
+    for (let i = 0; i <= 4; i++) {
+      const ratio = i / 4;
+      const y = top + (plotH - ratio * plotH);
+      const val = Math.round(ratio * maxCount);
+      yTicks.push(
+        '<line x1="' +
+          left +
+          '" y1="' +
+          y.toFixed(1) +
+          '" x2="' +
+          (width - right) +
+          '" y2="' +
+          y.toFixed(1) +
+          '" stroke="#334155" stroke-opacity="0.45"/>'
+      );
+      yTicks.push(
+        '<text x="' +
+          (left - 6) +
+          '" y="' +
+          (y + 3).toFixed(1) +
+          '" font-size="10" fill="#94a3b8" text-anchor="end">' +
+          val +
+          "</text>"
+      );
+    }
+
     el.innerHTML =
       '<svg width="100%" height="220" viewBox="0 0 ' +
       width +
@@ -226,6 +248,7 @@
       '" y2="' +
       (top + plotH) +
       '" stroke="#334155"/>' +
+      yTicks.join("") +
       bars +
       '<text x="' +
       left +
@@ -410,20 +433,15 @@
       )
       .join("");
 
-    const doorDots = cfg.doors
+    const doorMarkers = cfg.doors
       .map(
-        (d) =>
-          '<circle cx="' +
-          d.x +
-          '" cy="' +
-          d.y +
-          '" r="4" fill="#f8fafc"/>' +
+        (d, i) =>
           '<text x="' +
-          (d.x + 8) +
+          d.x +
           '" y="' +
-          (d.y - 8) +
-          '" font-size="10" fill="#e2e8f0">' +
-          d.name +
+          d.y +
+          '" font-size="50" fill="#000000" stroke="#ffffff" stroke-width="4" paint-order="stroke fill" text-anchor="middle" dominant-baseline="middle">' +
+          (i + 1) +
           "</text>"
       )
       .join("");
@@ -466,7 +484,7 @@
       '"/>' +
       circles +
       flashAnim +
-      doorDots +
+      doorMarkers +
       "</svg>";
   }
 
