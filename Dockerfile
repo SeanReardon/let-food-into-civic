@@ -27,6 +27,7 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy application code
 COPY src/ ./src/
 COPY art/ ./art/
+COPY schema/ ./schema/
 COPY ablon.png ./ablon.png
 
 # Expose the port
