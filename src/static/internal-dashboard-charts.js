@@ -53,6 +53,22 @@
       .catch(() => null);
   }
 
+  function loadImageDimensions(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = function () {
+        resolve({
+          width: img.naturalWidth || 900,
+          height: img.naturalHeight || 900,
+        });
+      };
+      img.onerror = function () {
+        resolve({ width: 900, height: 900 });
+      };
+      img.src = src;
+    });
+  }
+
   function renderPolarHourChart(events) {
     if (!events.length) return empty("polar-chart", "No call events yet.");
     const el = document.getElementById("polar-chart");
@@ -317,7 +333,7 @@
     el.innerHTML = rows;
   }
 
-  function renderDoorRipples(events, cfg) {
+  function renderDoorRipples(events, cfg, imageSize) {
     const mapWrap = document.getElementById("door-ripple-map");
     if (!mapWrap) return;
     if (!cfg || !Array.isArray(cfg.doors)) {
@@ -328,6 +344,7 @@
     const totalDays = Math.max(1, Number(cfg.totalDays || 60));
     const startSize = Number(cfg.startSizeInPixels || 28);
     const endSize = Number(cfg.endSizeInPixels || 210);
+    const thickness = Math.max(1, Number(cfg.circleThicknessInPixels || 2));
     const startColor = cfg.startColorRGBA || [245, 158, 11, 255];
     const endColor = cfg.endColorRGBA || [59, 130, 246, 20];
 
@@ -374,8 +391,8 @@
       });
     });
 
-    const w = 900;
-    const h = 900;
+    const w = imageSize && imageSize.width ? imageSize.width : 900;
+    const h = imageSize && imageSize.height ? imageSize.height : 900;
     const circles = ripples
       .map(
         (r) =>
@@ -387,7 +404,9 @@
           r.r.toFixed(1) +
           '" fill="none" stroke="' +
           r.stroke +
-          '" stroke-width="2"/>'
+          '" stroke-width="' +
+          thickness.toFixed(1) +
+          '"/>'
       )
       .join("");
 
@@ -420,7 +439,9 @@
           f.door.y +
           '" r="' +
           startSize.toFixed(1) +
-          '" fill="none" stroke="#ff0000" stroke-width="3">' +
+          '" fill="none" stroke="#ff0000" stroke-width="' +
+          thickness.toFixed(1) +
+          '">' +
           '<animate attributeName="stroke" values="#ff0000ff;#ffffffff;#ff0000ff" dur="' +
           dur.toFixed(2) +
           's" repeatCount="indefinite" />' +
@@ -457,7 +478,9 @@
     renderWeekdayChart(events);
     fetchDoorConfig().then((cfg) => {
       renderDoorHistogram(events, cfg);
-      renderDoorRipples(events, cfg);
+      loadImageDimensions("/art/ablon.png").then((size) => {
+        renderDoorRipples(events, cfg, size);
+      });
     });
   }
 

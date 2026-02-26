@@ -4,6 +4,7 @@
   "totalDays": 60,
   "startSizeInPixels": 28,
   "endSizeInPixels": 210,
+  "circleThicknessInPixels": 6,
   "startColorRGBA": [245, 158, 11, 255],
   "endColorRGBA": [59, 130, 246, 20],
   "doors": [

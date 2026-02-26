@@ -1695,9 +1695,6 @@ def render_snooze_ui():
                     <div id="door-ripple-map">
                         <img src="/art/ablon.png" alt="Ablon map">
                     </div>
-                    <p class="map-caption">
-                        Future work: map caller numbers to XY coordinates and build a usage heatmap overlay.
-                    </p>
                 </div>
             </div>
 
