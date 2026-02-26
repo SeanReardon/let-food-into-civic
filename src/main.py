@@ -19,7 +19,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from flask import Flask, Response, request, jsonify, redirect
+from flask import Flask, Response, request, jsonify, redirect, send_from_directory, abort
 import telnyx
 
 # Load environment variables from .env file
@@ -119,6 +119,24 @@ def is_local_network(req) -> bool:
         return False
 
 
+def is_internal_network(req) -> bool:
+    """
+    Determine internal access using nginx-provided network header.
+
+    Header contract:
+    - X-Internal-Network: true   -> internal dashboard
+    - X-Internal-Network: false  -> external/public page
+
+    Falls back to legacy IP-based local detection if the header is absent.
+    """
+    header_value = req.headers.get("X-Internal-Network", "").strip().lower()
+    if header_value == "true":
+        return True
+    if header_value == "false":
+        return False
+    return is_local_network(req)
+
+
 def normalize_phone_number(phone: str) -> str:
     """
     Normalize phone number to E.164 format (+1XXXXXXXXXX).
@@ -190,6 +208,7 @@ OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
 
 # Snooze state file
 SNOOZE_FILE = DATA_DIR / "snooze.json"
+SMS_PAUSE_STATE_FILE = DATA_DIR / "sms-pause-state.json"
 
 # Events log file
 EVENTS_FILE = DATA_DIR / "events.json"
@@ -200,6 +219,7 @@ PHONE_TO_NAME = {
     "+12149090499": "sean",
 }
 NAME_TO_PHONE = {v: k for k, v in PHONE_TO_NAME.items()}
+ART_DIR = Path("/app/art")
 
 
 # =============================================================================
@@ -295,43 +315,86 @@ def audit_log_opt_in_event(phone_number, action, source, timestamp):
 
 
 # =============================================================================
-# Snooze State Management
+# SMS Pause State Management (skip next unlock only)
 # =============================================================================
 
 
-def load_snooze_state():
+def default_sms_pause_state():
+    return {
+        "sean": {"skip_next": False, "phone": NAME_TO_PHONE.get("sean", "")},
+        "linda": {"skip_next": False, "phone": NAME_TO_PHONE.get("linda", "")},
+    }
+
+
+def load_sms_pause_state():
     """
-    Load snooze state from file.
+    Load per-user SMS pause state from file.
 
-    Returns dict like {"linda": false, "sean": false}.
-    Creates file with default (not snoozed) state if it doesn't exist.
+    Schema:
+    {
+      "sean": {"skip_next": false, "phone": "+1..."},
+      "linda": {"skip_next": false, "phone": "+1..."}
+    }
     """
-    default_state = {"linda": False, "sean": False}
+    default_state = default_sms_pause_state()
 
-    if not SNOOZE_FILE.exists():
-        save_snooze_state(default_state)
-        return default_state
+    if SMS_PAUSE_STATE_FILE.exists():
+        try:
+            with open(SMS_PAUSE_STATE_FILE, "r") as f:
+                state = json.load(f)
+                for user, defaults in default_state.items():
+                    if user not in state or not isinstance(state[user], dict):
+                        state[user] = defaults.copy()
+                    state[user]["skip_next"] = bool(state[user].get("skip_next", False))
+                    state[user]["phone"] = state[user].get("phone") or defaults["phone"]
+                return state
+        except Exception as e:
+            logger.error(f"Failed to load SMS pause state: {e}")
+            return default_state
 
+    # One-time migration from legacy boolean snooze state.
+    if SNOOZE_FILE.exists():
+        try:
+            with open(SNOOZE_FILE, "r") as f:
+                legacy = json.load(f)
+            migrated = default_state.copy()
+            for user in ["sean", "linda"]:
+                migrated[user]["skip_next"] = bool(legacy.get(user, False))
+            save_sms_pause_state(migrated)
+            return migrated
+        except Exception as e:
+            logger.error(f"Failed to migrate legacy snooze state: {e}")
+
+    save_sms_pause_state(default_state)
+    return default_state
+
+
+def save_sms_pause_state(state):
+    """Persist per-user SMS pause state."""
     try:
-        with open(SNOOZE_FILE, "r") as f:
-            state = json.load(f)
-            # Ensure both recipients exist in state
-            for name in default_state:
-                if name not in state:
-                    state[name] = False
-            return state
-    except Exception as e:
-        logger.error(f"Failed to load snooze state: {e}")
-        return default_state
-
-
-def save_snooze_state(state):
-    """Save snooze state to file."""
-    try:
-        with open(SNOOZE_FILE, "w") as f:
+        with open(SMS_PAUSE_STATE_FILE, "w") as f:
             json.dump(state, f, indent=2)
     except Exception as e:
-        logger.error(f"Failed to save snooze state: {e}")
+        logger.error(f"Failed to save SMS pause state: {e}")
+
+
+def set_sms_pause_state(user: str, skip_next: bool):
+    """Set skip-next state for one user."""
+    state = load_sms_pause_state()
+    if user not in state:
+        return state
+    state[user]["skip_next"] = bool(skip_next)
+    save_sms_pause_state(state)
+    return state
+
+
+def reset_all_sms_pause_state():
+    """Reset skip-next flags for all users after each unlock action."""
+    state = load_sms_pause_state()
+    for user in state:
+        state[user]["skip_next"] = False
+    save_sms_pause_state(state)
+    logger.info("🔄 Reset all SMS pause flags to false after unlock")
 
 
 def get_name_for_phone(phone_number):
@@ -340,20 +403,13 @@ def get_name_for_phone(phone_number):
     return PHONE_TO_NAME.get(normalized)
 
 
-def is_snoozed(phone_number):
-    """Check if a phone number is snoozed."""
+def is_sms_paused_for_next_unlock(phone_number):
+    """Check if a phone number is marked 'skip on next unlock'."""
     name = get_name_for_phone(phone_number)
     if not name:
         return False
-    state = load_snooze_state()
-    return state.get(name, False)
-
-
-def reset_all_snooze():
-    """Reset all snooze states to false (not snoozed)."""
-    state = {"linda": False, "sean": False}
-    save_snooze_state(state)
-    logger.info("🔄 All snooze states reset to false")
+    state = load_sms_pause_state()
+    return bool(state.get(name, {}).get("skip_next", False))
 
 
 # =============================================================================
@@ -407,37 +463,115 @@ def append_event(timestamp):
     save_events(events)
 
 
-def get_event_stats():
-    """Compute event statistics for dashboard cards."""
-    events = load_events()
-    now = datetime.now(TZ_DALLAS)
-    seven_days_ago = now - timedelta(days=7)
-    thirty_days_ago = now - timedelta(days=30)
-
+def parse_event_timestamps():
+    """Parse unlock event timestamps into timezone-aware datetimes."""
     parsed = []
-    for event in events:
+    for event in load_events():
         ts_str = event.get("timestamp")
         if not ts_str:
             continue
         try:
-            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(TZ_DALLAS)
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(
+                TZ_DALLAS
+            )
             parsed.append(ts)
         except Exception as e:
-            logger.debug(f"Failed to parse timestamp for stats: {ts_str}, {e}")
+            logger.debug(f"Failed to parse timestamp for event stats: {ts_str}, {e}")
+    parsed.sort()
+    return parsed
 
-    parsed.sort(reverse=True)
 
+def format_duration(delta: timedelta) -> str:
+    """Format a timedelta in a compact human-readable form."""
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 60:
+        return f"{total_seconds} seconds"
+    minutes, seconds = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''}"
+
+
+def get_event_stats():
+    """Compute playful diagnostics for internal dashboard cards."""
+    parsed = parse_event_timestamps()
+    now = datetime.now(TZ_DALLAS)
+    seven_days_ago = now - timedelta(days=7)
     total = len(parsed)
-    last_event = parsed[0] if parsed else None
+    last_event = parsed[-1] if parsed else None
     last_7_days = sum(1 for ts in parsed if ts >= seven_days_ago)
-    last_30_days = sum(1 for ts in parsed if ts >= thirty_days_ago)
+
+    shortest = None
+    if len(parsed) >= 2:
+        shortest = min(parsed[i] - parsed[i - 1] for i in range(1, len(parsed)))
 
     return {
         "total": total,
         "last_7_days": last_7_days,
-        "last_30_days": last_30_days,
+        "shortest_gap": format_duration(shortest) if shortest else "N/A",
         "last_event": last_event.strftime("%b %-d, %-I:%M %p") if last_event else "Never",
     }
+
+
+def generate_hourly_unlock_histogram():
+    """Generate SVG chart with 24-hour unlock buckets."""
+    parsed = parse_event_timestamps()
+    if not parsed:
+        return None
+
+    counts = [0] * 24
+    for ts in parsed:
+        counts[ts.hour] += 1
+
+    max_count = max(counts) or 1
+    width = 700
+    height = 220
+    margin_left = 40
+    margin_right = 20
+    margin_top = 28
+    margin_bottom = 34
+    bar_area_width = width - margin_left - margin_right
+    bar_area_height = height - margin_top - margin_bottom
+    bar_width = bar_area_width / 24
+
+    bars = []
+    labels = []
+    for hour in range(24):
+        count = counts[hour]
+        x = margin_left + hour * bar_width
+        h = (count / max_count) * bar_area_height if max_count > 0 else 0
+        y = margin_top + (bar_area_height - h)
+        bars.append(
+            f'<rect x="{x:.2f}" y="{y:.2f}" width="{max(bar_width - 2, 2):.2f}" height="{h:.2f}" fill="#d97706" rx="2"/>'
+        )
+        if hour % 3 == 0:
+            labels.append(
+                f'<text x="{x + bar_width / 2:.2f}" y="{height - 12}" font-size="9" fill="#94a3b8" text-anchor="middle">{hour:02d}</text>'
+            )
+
+    y_grid = []
+    for i in range(5):
+        y = margin_top + i * (bar_area_height / 4)
+        tick_val = int(max_count * (1 - i / 4))
+        y_grid.append(
+            f'<line x1="{margin_left}" y1="{y:.2f}" x2="{width - margin_right}" y2="{y:.2f}" stroke="#334155" stroke-width="1" opacity="0.5"/>'
+        )
+        y_grid.append(
+            f'<text x="{margin_left - 6}" y="{y + 3:.2f}" font-size="9" fill="#94a3b8" text-anchor="end">{tick_val}</text>'
+        )
+
+    return "\n".join(
+        [
+            f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">',
+            f'<text x="{width/2:.1f}" y="16" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="middle">Unlocks by Hour (24h)</text>',
+            *y_grid,
+            *bars,
+            *labels,
+            f'<line x1="{margin_left}" y1="{margin_top + bar_area_height:.2f}" x2="{width - margin_right}" y2="{margin_top + bar_area_height:.2f}" stroke="#334155" stroke-width="1"/>',
+            "</svg>",
+        ]
+    )
 
 
 # =============================================================================
@@ -720,82 +854,85 @@ def send_sms_notifications(caller: str, timestamp: datetime):
     Send SMS notifications to configured phone numbers.
 
     Runs in a background thread to not block the webhook response.
-    Respects snooze state and resets all snoozes after the event.
+    Respects per-user "skip next unlock" state and always resets state after unlock.
     """
     logger.info(
         f"📱 SMS notification function called for caller: {caller} at {timestamp}"
     )
 
-    if not NOTIFY_NUMBERS:
-        logger.warning(
-            "⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)"
-        )
-        return
-
-    if not TELNYX_PHONE_NUMBER:
-        logger.warning(
-            "⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)"
-        )
-        return
-
-    if not telnyx_client:
-        logger.warning("⚠️  Telnyx client not initialized (API key missing)")
-        return
-
-    message = "the civic callbox was answered and I did 5s, <3 lfic."
-    logger.info(f"📝 SMS message: {message}")
-    logger.info(f"📋 Sending to {len(NOTIFY_NUMBERS)} recipient(s): {NOTIFY_NUMBERS}")
-
     success_count = 0
     failure_count = 0
-    snoozed_count = 0
+    skipped_count = 0
 
-    for phone_number in NOTIFY_NUMBERS:
-        # Check snooze state first
-        name = get_name_for_phone(phone_number)
-        if is_snoozed(phone_number):
-            logger.info(
-                f"😴 Skipping {name.capitalize() if name else phone_number} (snoozed)"
+    try:
+        if not NOTIFY_NUMBERS:
+            logger.warning(
+                "⚠️  No notification numbers configured (NOTIFY_NUMBERS is empty)"
             )
-            snoozed_count += 1
-            continue
+            return
 
-        # Always check durable opt-in/opt-out record before sending
-        # This respects opt-out status even if number is in NOTIFY_NUMBERS
-        opt_ins = load_opt_ins()
-        phone_status = opt_ins.get(phone_number, {}).get("status")
-
-        if phone_status != "opted_in":
-            if phone_status == "opted_out":
-                logger.warning(
-                    f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)"
-                )
-            else:
-                logger.warning(
-                    f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})"
-                )
-            failure_count += 1
-            continue
-
-        try:
-            logger.info(f"📤 Attempting to send SMS to {phone_number}...")
-            telnyx_client.messages.send(
-                from_=TELNYX_PHONE_NUMBER,
-                to=phone_number,
-                text=message,
+        if not TELNYX_PHONE_NUMBER:
+            logger.warning(
+                "⚠️  No Telnyx phone number configured (TELNYX_PHONE_NUMBER is empty)"
             )
-            logger.info(f"✅ SMS successfully sent to {phone_number}")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Failed to send SMS to {phone_number}: {e}", exc_info=True)
-            failure_count += 1
+            return
 
-    # Reset all snooze states after the event (regardless of success/failure)
-    reset_all_snooze()
+        if not telnyx_client:
+            logger.warning("⚠️  Telnyx client not initialized (API key missing)")
+            return
 
-    logger.info(
-        f"📊 SMS notification summary: {success_count} succeeded, {failure_count} failed, {snoozed_count} snoozed out of {len(NOTIFY_NUMBERS)} total"
-    )
+        message = "the civic callbox was answered and I did 5s, <3 lfic."
+        logger.info(f"📝 SMS message: {message}")
+        logger.info(
+            f"📋 Sending to {len(NOTIFY_NUMBERS)} recipient(s): {NOTIFY_NUMBERS}"
+        )
+
+        for phone_number in NOTIFY_NUMBERS:
+            # Check per-user skip-next flag first.
+            name = get_name_for_phone(phone_number)
+            if is_sms_paused_for_next_unlock(phone_number):
+                logger.info(
+                    f"⏭️ Skipping SMS for {name.capitalize() if name else phone_number} (skip_next=true)"
+                )
+                skipped_count += 1
+                continue
+
+            # Always check durable opt-in/opt-out record before sending.
+            opt_ins = load_opt_ins()
+            phone_status = opt_ins.get(phone_number, {}).get("status")
+
+            if phone_status != "opted_in":
+                if phone_status == "opted_out":
+                    logger.warning(
+                        f"🛑 Skipping SMS to {phone_number} - opted out (respecting opt-out status)"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️  Skipping SMS to {phone_number} - not opted in (status: {phone_status or 'unknown'})"
+                    )
+                failure_count += 1
+                continue
+
+            try:
+                logger.info(f"📤 Attempting to send SMS to {phone_number}...")
+                telnyx_client.messages.send(
+                    from_=TELNYX_PHONE_NUMBER,
+                    to=phone_number,
+                    text=message,
+                )
+                logger.info(f"✅ SMS successfully sent to {phone_number}")
+                success_count += 1
+            except Exception as e:
+                logger.error(
+                    f"❌ Failed to send SMS to {phone_number}: {e}", exc_info=True
+                )
+                failure_count += 1
+    finally:
+        # Unlock action happened, so clear all skip-next flags.
+        reset_all_sms_pause_state()
+        logger.info(
+            f"📊 SMS summary: {success_count} succeeded, {failure_count} failed, {skipped_count} skipped out of {len(NOTIFY_NUMBERS)} total"
+        )
 
 
 def send_notifications_async(caller: str):
@@ -1033,10 +1170,10 @@ def handle_incoming_sms():
 
 
 def render_snooze_ui():
-    """Render the local-only snooze management UI."""
-    state = load_snooze_state()
-    linda_snoozed = state.get("linda", False)
-    sean_snoozed = state.get("sean", False)
+    """Render the internal dashboard for home-network clients."""
+    state = load_sms_pause_state()
+    linda_snoozed = bool(state.get("linda", {}).get("skip_next", False))
+    sean_snoozed = bool(state.get("sean", {}).get("skip_next", False))
 
     def format_phone(phone):
         """Format phone number nicely: +14693059242 -> (469) 305-9242"""
@@ -1047,14 +1184,10 @@ def render_snooze_ui():
     linda_phone = format_phone(NAME_TO_PHONE.get("linda", ""))
     sean_phone = format_phone(NAME_TO_PHONE.get("sean", ""))
 
-    linda_toggle_class = "toggle snoozed" if linda_snoozed else "toggle"
-    sean_toggle_class = "toggle snoozed" if sean_snoozed else "toggle"
-
-    linda_status = "Snoozed" if linda_snoozed else "Active"
-    sean_status = "Snoozed" if sean_snoozed else "Active"
+    linda_status = "Skip next unlock" if linda_snoozed else "SMS enabled"
+    sean_status = "Skip next unlock" if sean_snoozed else "SMS enabled"
     stats = get_event_stats()
-    daily_chart = generate_daily_histogram()
-    polar_chart = generate_polar_chart()
+    hourly_chart = generate_hourly_unlock_histogram()
 
     return f'''
     <!DOCTYPE html>
@@ -1070,22 +1203,21 @@ def render_snooze_ui():
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
             :root {{
-                --bg: #0f172a;
-                --bg-alt: #111827;
-                --surface: #1e293b;
-                --text: #e2e8f0;
+                --bg: #111827;
+                --surface: #1f2937;
+                --surface-2: #0f172a;
+                --text: #e5e7eb;
                 --text-secondary: #cbd5e1;
                 --text-muted: #94a3b8;
-                --accent: #d97706;
-                --accent-light: #1f2937;
+                --accent: #f59e0b;
                 --border: #334155;
                 --success: #22c55e;
-                --card-shadow: rgba(2, 6, 23, 0.45);
+                --card-shadow: rgba(2, 6, 23, 0.35);
             }}
 
             body {{
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: radial-gradient(circle at top, #111827 0%, var(--bg) 60%);
+                background: radial-gradient(circle at top, #1f2937 0%, var(--bg) 62%);
                 color: var(--text);
                 min-height: 100vh;
                 line-height: 1.6;
@@ -1093,7 +1225,7 @@ def render_snooze_ui():
             }}
 
             .container {{
-                max-width: 760px;
+                max-width: 920px;
                 margin: 0 auto;
                 padding: 48px 24px;
             }}
@@ -1104,7 +1236,7 @@ def render_snooze_ui():
             }}
 
             .logo {{
-                font-size: 2.5rem;
+                font-size: 2.2rem;
                 margin-bottom: 16px;
             }}
 
@@ -1113,7 +1245,7 @@ def render_snooze_ui():
                 font-size: 1.75rem;
                 font-weight: 600;
                 margin-bottom: 8px;
-                letter-spacing: -0.01em;
+                letter-spacing: -0.02em;
             }}
 
             .subtitle {{
@@ -1121,19 +1253,19 @@ def render_snooze_ui():
                 font-size: 0.95rem;
             }}
 
-            .info-box {{
-                background: var(--accent-light);
-                border-left: 4px solid var(--accent);
+            .internal-banner {{
+                background: rgba(245, 158, 11, 0.12);
+                border: 1px solid rgba(245, 158, 11, 0.5);
                 padding: 16px 20px;
                 margin-bottom: 32px;
-                border-radius: 0 8px 8px 0;
+                border-radius: 10px;
                 font-size: 0.9rem;
-                color: var(--text-secondary);
+                color: #fde68a;
             }}
 
             .stats-grid {{
                 display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(3, minmax(0, 1fr));
                 gap: 12px;
                 margin-bottom: 24px;
             }}
@@ -1160,20 +1292,35 @@ def render_snooze_ui():
                 color: var(--text);
             }}
 
+            .team-grid {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 16px;
+                margin-bottom: 28px;
+            }}
+
             .recipient-card {{
-                background: var(--surface);
+                background: var(--surface-2);
                 border: 1px solid var(--border);
                 border-radius: 12px;
                 padding: 24px;
-                margin-bottom: 16px;
                 box-shadow: 0 8px 24px var(--card-shadow);
             }}
 
             .recipient-header {{
                 display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 8px;
+                gap: 14px;
+                align-items: flex-start;
+            }}
+
+            .avatar {{
+                width: 84px;
+                height: 84px;
+                border-radius: 12px;
+                object-fit: cover;
+                object-position: center;
+                border: 1px solid var(--border);
+                flex-shrink: 0;
             }}
 
             .recipient-name {{
@@ -1186,42 +1333,36 @@ def render_snooze_ui():
                 font-size: 0.9rem;
             }}
 
-            .toggle {{
-                width: 64px;
-                height: 36px;
-                background: var(--success);
-                border-radius: 18px;
-                position: relative;
+            .pause-form {{
+                margin-top: 14px;
+            }}
+
+            .pause-toggle {{
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
                 cursor: pointer;
-                transition: background 0.3s;
-                border: none;
-                padding: 0;
+                color: var(--text-secondary);
+                font-size: 0.93rem;
             }}
 
-            .toggle::after {{
-                content: '';
-                position: absolute;
-                width: 28px;
-                height: 28px;
-                background: white;
-                border-radius: 50%;
-                top: 4px;
-                left: 4px;
-                transition: transform 0.3s;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            .pause-toggle input[type="checkbox"] {{
+                width: 18px;
+                height: 18px;
+                accent-color: var(--accent);
+                cursor: pointer;
             }}
 
-            .toggle.snoozed {{
-                background: var(--text-muted);
-            }}
-
-            .toggle.snoozed::after {{
-                transform: translateX(28px);
+            .helper-text {{
+                margin-top: 10px;
+                color: var(--text-muted);
+                font-size: 0.84rem;
             }}
 
             .status-row {{
                 display: flex;
-                justify-content: space-between;
+                justify-content: flex-start;
+                gap: 8px;
                 align-items: center;
                 margin-top: 12px;
                 padding-top: 12px;
@@ -1243,11 +1384,11 @@ def render_snooze_ui():
             }}
 
             .status-value.snoozed {{
-                color: var(--text-muted);
+                color: #fbbf24;
             }}
 
             .charts-section {{
-                margin-top: 40px;
+                margin-top: 20px;
             }}
 
             .charts-section h2 {{
@@ -1262,7 +1403,7 @@ def render_snooze_ui():
             .chart-container {{
                 margin-bottom: 32px;
                 text-align: center;
-                background: var(--surface);
+                background: var(--surface-2);
                 border: 1px solid var(--border);
                 border-radius: 12px;
                 padding: 20px 12px 12px;
@@ -1283,6 +1424,10 @@ def render_snooze_ui():
 
             @media (max-width: 600px) {{
                 .stats-grid {{
+                    grid-template-columns: 1fr 1fr;
+                }}
+
+                .team-grid {{
                     grid-template-columns: 1fr;
                 }}
             }}
@@ -1293,11 +1438,11 @@ def render_snooze_ui():
             <header>
                 <div class="logo">🏠</div>
                 <h1>let-food-into-civic</h1>
-                <p class="subtitle">Local notification controls</p>
+                <p class="subtitle">Internal dashboard for home network controls</p>
             </header>
 
-            <div class="info-box">
-                Snoozing skips the <strong>next gate unlock event only</strong>. After the gate unlocks, snooze automatically resets and notifications resume.
+            <div class="internal-banner">
+                You are on the home network. Check a box to skip SMS for the <strong>next unlock only</strong>. After any unlock event, both boxes reset automatically.
             </div>
 
             <div class="stats-grid">
@@ -1310,66 +1455,70 @@ def render_snooze_ui():
                     <div class="stat-value">{stats["last_7_days"]}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Last 30 Days</div>
-                    <div class="stat-value">{stats["last_30_days"]}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Last Unlock</div>
-                    <div class="stat-value" style="font-size: 1rem;">{stats["last_event"]}</div>
+                    <div class="stat-label">Shortest Gap</div>
+                    <div class="stat-value" style="font-size: 1.05rem;">{stats["shortest_gap"]}</div>
                 </div>
             </div>
 
-            <div class="recipient-card">
-                <div class="recipient-header">
-                    <div>
-                        <div class="recipient-name">Linda</div>
-                        <div class="recipient-phone">{linda_phone}</div>
+            <div class="team-grid">
+                <div class="recipient-card">
+                    <div class="recipient-header">
+                        <img src="/avatars/linda.png" alt="Linda avatar" class="avatar">
+                        <div>
+                            <div class="recipient-name">Linda</div>
+                            <div class="recipient-phone">{linda_phone}</div>
+                            <form method="POST" action="/internal/toggle-sms-pause" class="pause-form">
+                                <input type="hidden" name="user" value="linda">
+                                <label class="pause-toggle">
+                                    <input type="checkbox" name="skip_next" value="true" {"checked" if linda_snoozed else ""} onchange="this.form.submit()">
+                                    <span>Skip SMS on next unlock</span>
+                                </label>
+                            </form>
+                            <p class="helper-text">Check to skip SMS notification for the next gate unlock only. Resets automatically after each unlock.</p>
+                        </div>
                     </div>
-                    <form method="POST" action="/admin/snooze" style="margin: 0;">
-                        <input type="hidden" name="recipient" value="linda">
-                        <input type="hidden" name="snoozed" value="{"false" if linda_snoozed else "true"}">
-                        <button type="submit" class="{linda_toggle_class}" aria-label="Toggle snooze for Linda"></button>
-                    </form>
+                    <div class="status-row">
+                        <span class="status-label">Status</span>
+                        <span class="status-value {"snoozed" if linda_snoozed else "active"}">{linda_status}</span>
+                    </div>
                 </div>
-                <div class="status-row">
-                    <span class="status-label">Notification status</span>
-                    <span class="status-value {"snoozed" if linda_snoozed else "active"}">{linda_status}</span>
-                </div>
-            </div>
 
-            <div class="recipient-card">
-                <div class="recipient-header">
-                    <div>
-                        <div class="recipient-name">Sean</div>
-                        <div class="recipient-phone">{sean_phone}</div>
+                <div class="recipient-card">
+                    <div class="recipient-header">
+                        <img src="/avatars/sean.png" alt="Sean avatar" class="avatar">
+                        <div>
+                            <div class="recipient-name">Sean</div>
+                            <div class="recipient-phone">{sean_phone}</div>
+                            <form method="POST" action="/internal/toggle-sms-pause" class="pause-form">
+                                <input type="hidden" name="user" value="sean">
+                                <label class="pause-toggle">
+                                    <input type="checkbox" name="skip_next" value="true" {"checked" if sean_snoozed else ""} onchange="this.form.submit()">
+                                    <span>Skip SMS on next unlock</span>
+                                </label>
+                            </form>
+                            <p class="helper-text">Check to skip SMS notification for the next gate unlock only. Resets automatically after each unlock.</p>
+                        </div>
                     </div>
-                    <form method="POST" action="/admin/snooze" style="margin: 0;">
-                        <input type="hidden" name="recipient" value="sean">
-                        <input type="hidden" name="snoozed" value="{"false" if sean_snoozed else "true"}">
-                        <button type="submit" class="{sean_toggle_class}" aria-label="Toggle snooze for Sean"></button>
-                    </form>
-                </div>
-                <div class="status-row">
-                    <span class="status-label">Notification status</span>
-                    <span class="status-value {"snoozed" if sean_snoozed else "active"}">{sean_status}</span>
+                    <div class="status-row">
+                        <span class="status-label">Status</span>
+                        <span class="status-value {"snoozed" if sean_snoozed else "active"}">{sean_status}</span>
+                    </div>
                 </div>
             </div>
 
             <div class="charts-section">
-                <h2>Analytics</h2>
+                <h2>Fun Team Diagnostics</h2>
                 <div class="chart-container">
-                    {daily_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
-                </div>
-                <div class="chart-container">
-                    {polar_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
+                    {hourly_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No unlock events yet.</p>"}
                 </div>
             </div>
 
             <footer>
                 <p>Let Food Into Civic</p>
                 <p>Local network access only</p>
+                <p style="margin-top: 8px;">Most recent unlock: {stats["last_event"]}</p>
                 <p style="margin-top: 16px;">
-                    <a href="/?view=public" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; display: inline-block;">View Public Page</a>
+                    <a href="/?view=external" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; display: inline-block;">See what visitors see</a>
                 </p>
             </footer>
         </div>
@@ -1708,30 +1857,41 @@ def render_public_landing_page():
     """
 
 
+@app.route("/avatars/<filename>", methods=["GET"])
+def serve_avatar(filename):
+    """Serve static avatar images from /app/art for the internal dashboard."""
+    allowed = {"sean.png", "linda.png"}
+    if filename not in allowed:
+        abort(404)
+    if not ART_DIR.exists():
+        abort(404)
+    return send_from_directory(str(ART_DIR), filename)
+
+
 @app.route("/", methods=["GET"])
 def index():
     """
     Home page - shows snooze UI for local network, public landing page for remote.
 
-    Supports ?view= query parameter to override automatic network detection:
-    - ?view=public: Show public landing page (works from anywhere)
-    - ?view=local: Show snooze UI (only works from local network, returns 403 if remote)
+    Supports ?view= query parameter to override network routing:
+    - ?view=external or ?view=public: always show public landing page
+    - ?view=internal or ?view=local: require internal network
     """
     view_override = request.args.get("view", "").lower()
-    is_local = is_local_network(request)
+    is_internal = is_internal_network(request)
 
     # Handle view override
-    if view_override == "local":
-        if not is_local:
+    if view_override in {"internal", "local"}:
+        if not is_internal:
             # Remote user trying to access local controls
-            return jsonify({"error": "Access denied - local network only"}), 403
+            return jsonify({"error": "Access denied - internal network only"}), 403
         return render_snooze_ui()
-    elif view_override == "public":
+    elif view_override in {"external", "public"}:
         # Anyone can view the public page
         return render_public_landing_page()
 
-    # Default: automatic detection based on network
-    if is_local:
+    # Default: network-driven routing.
+    if is_internal:
         return render_snooze_ui()
     return render_public_landing_page()
 
@@ -1958,61 +2118,54 @@ def sms_consent():
 # =============================================================================
 
 
-@app.route("/admin/snooze", methods=["POST"])
-def snooze_recipient():
+@app.route("/internal/toggle-sms-pause", methods=["POST"])
+def toggle_sms_pause():
     """
-    Snooze or unsnooze a recipient's notifications.
+    Toggle per-user "skip SMS on next unlock" state.
 
-    POST /admin/snooze
-    Body (JSON): {"recipient": "linda", "snoozed": true}
-    Body (Form): recipient=linda&snoozed=true
+    POST /internal/toggle-sms-pause
+    Body (JSON): {"user": "linda", "skip_next": true}
+    Body (Form): user=linda&skip_next=true
 
-    Only accessible from local network.
+    Only accessible from internal network.
     """
-    # Check local network access
-    if not is_local_network(request):
-        logger.warning(f"Blocked snooze request from remote IP")
-        return jsonify({"error": "Access denied - local network only"}), 403
+    if not is_internal_network(request):
+        logger.warning("Blocked SMS pause toggle request from external network")
+        return jsonify({"error": "Access denied - internal network only"}), 403
 
-    # Get data from JSON or form
     if request.is_json:
         data = request.get_json() or {}
-        recipient = data.get("recipient", "").lower()
-        snoozed_raw = data.get("snoozed")
+        user = data.get("user", "").lower()
+        skip_next_raw = data.get("skip_next")
     else:
-        recipient = request.form.get("recipient", "").lower()
-        snoozed_raw = request.form.get("snoozed", "")
+        user = request.form.get("user", "").lower()
+        # Unchecked checkbox does not submit any key.
+        skip_next_raw = request.form.get("skip_next")
 
-    # Parse snoozed value
-    if isinstance(snoozed_raw, bool):
-        snoozed = snoozed_raw
-    elif isinstance(snoozed_raw, str):
-        snoozed = snoozed_raw.lower() == "true"
+    if isinstance(skip_next_raw, bool):
+        skip_next = skip_next_raw
+    elif isinstance(skip_next_raw, str):
+        skip_next = skip_next_raw.lower() == "true"
     else:
-        snoozed = False
+        skip_next = False
 
-    # Validate recipient
-    if recipient not in ["linda", "sean"]:
-        return jsonify({"error": 'Invalid recipient. Must be "linda" or "sean"'}), 400
+    if user not in ["linda", "sean"]:
+        return jsonify({"error": 'Invalid user. Must be "linda" or "sean"'}), 400
 
-    # Update snooze state
-    state = load_snooze_state()
-    state[recipient] = snoozed
-    save_snooze_state(state)
+    state = set_sms_pause_state(user, skip_next)
 
     logger.info(
-        f"{'😴' if snoozed else '🔔'} {recipient.capitalize()} snooze set to {snoozed}"
+        f"{'⏭️' if skip_next else '✅'} {user.capitalize()} skip_next set to {skip_next}"
     )
 
-    # If form submission, redirect back to home page
     if not request.is_json:
         return redirect("/")
 
     return jsonify(
         {
             "success": True,
-            "recipient": recipient,
-            "snoozed": snoozed,
+            "user": user,
+            "skip_next": skip_next,
             "state": state,
         }
     )

@@ -26,6 +26,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY src/ ./src/
+COPY art/ ./art/
 
 # Expose the port
 EXPOSE 8080
