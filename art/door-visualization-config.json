@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "totalDays": 60,
+  "startSizeInPixels": 28,
+  "endSizeInPixels": 210,
+  "startColorRGBA": [245, 158, 11, 255],
+  "endColorRGBA": [59, 130, 246, 20],
+  "doors": [
+    {
+      "name": "door 1",
+      "fromNumber": "+12146188567",
+      "x": 565,
+      "y": 155
+    },
+    {
+      "name": "door 2",
+      "fromNumber": "+12146188570",
+      "x": 411,
+      "y": 444
+    },
+    {
+      "name": "door 3",
+      "fromNumber": "+12146188569",
+      "x": 700,
+      "y": 650
+    }
+  ]
+}

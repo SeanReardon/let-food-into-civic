@@ -468,6 +468,42 @@ def load_events():
         return []
 
 
+def load_call_event_details():
+    """
+    Load call-event records with timestamp/fromNumber/snoozedUsersCsv.
+
+    Falls back to legacy events.json with unknown caller.
+    """
+    events = []
+    call_event_files = sorted(EVENTS_DIR.glob("*-call-event.json"))
+    for event_file in call_event_files:
+        try:
+            with open(event_file, "r") as f:
+                payload = json.load(f)
+            timestamp = payload.get("timestamp")
+            if not timestamp:
+                continue
+            events.append(
+                {
+                    "timestamp": timestamp,
+                    "fromNumber": payload.get("fromNumber", "unknown"),
+                    "snoozedUsersCsv": payload.get("snoozedUsersCsv", ""),
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to load detailed call event from {event_file}: {e}")
+
+    if events:
+        return events
+
+    # Legacy fallback with unknown caller metadata.
+    return [
+        {"timestamp": e.get("timestamp"), "fromNumber": "unknown", "snoozedUsersCsv": ""}
+        for e in load_events()
+        if isinstance(e, dict) and e.get("timestamp")
+    ]
+
+
 def save_events(events):
     """Save events to legacy array file (backwards compatibility)."""
     try:
@@ -1280,12 +1316,7 @@ def render_snooze_ui():
     linda_status = "Skip next unlock" if linda_snoozed else "SMS enabled"
     sean_status = "Skip next unlock" if sean_snoozed else "SMS enabled"
     stats = get_event_stats()
-    event_timestamps = [
-        event.get("timestamp")
-        for event in load_events()
-        if isinstance(event, dict) and event.get("timestamp")
-    ]
-    events_json = json.dumps(event_timestamps)
+    events_json = json.dumps(load_call_event_details())
 
     return f'''
     <!DOCTYPE html>
@@ -1661,7 +1692,9 @@ def render_snooze_ui():
                     <div id="weekday-chart" class="viz-placeholder">Rendering chart...</div>
                 </div>
                 <div class="map-section">
-                    <img src="/ablon.png" alt="Ablon map">
+                    <div id="door-ripple-map">
+                        <img src="/art/ablon.png" alt="Ablon map">
+                    </div>
                     <p class="map-caption">
                         Future work: map caller numbers to XY coordinates and build a usage heatmap overlay.
                     </p>
@@ -2025,13 +2058,25 @@ def serve_avatar(filename):
     return send_from_directory(str(ART_DIR), filename)
 
 
+@app.route("/art/<filename>", methods=["GET"])
+def serve_art_file(filename):
+    """Serve whitelisted art assets used by internal visualizations."""
+    allowed = {"ablon.png", "door-visualization-config.json"}
+    if filename not in allowed:
+        abort(404)
+    file_path = ART_DIR / filename
+    if not file_path.exists():
+        abort(404)
+    return send_from_directory(str(ART_DIR), filename)
+
+
 @app.route("/ablon.png", methods=["GET"])
 def serve_ablon():
     """Serve the ablon base graphic used for future heatmap overlays."""
-    ablon_path = Path("/app/ablon.png")
+    ablon_path = ART_DIR / "ablon.png"
     if not ablon_path.exists():
         abort(404)
-    return send_from_directory("/app", "ablon.png")
+    return send_from_directory(str(ART_DIR), "ablon.png")
 
 
 @app.route("/schema/call-event.schema.json", methods=["GET"])

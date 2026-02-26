@@ -6,8 +6,15 @@
       const raw = JSON.parse(node.textContent || "[]");
       return Array.isArray(raw)
         ? raw
-            .map((ts) => new Date(ts))
-            .filter((d) => !Number.isNaN(d.getTime()))
+            .map((evt) => ({
+              timestamp: evt && evt.timestamp ? evt.timestamp : null,
+              fromNumber: evt && evt.fromNumber ? evt.fromNumber : "unknown",
+            }))
+            .map((evt) => ({
+              ...evt,
+              date: new Date(evt.timestamp),
+            }))
+            .filter((evt) => !Number.isNaN(evt.date.getTime()))
         : [];
     } catch (_err) {
       return [];
@@ -26,13 +33,33 @@
     el.innerHTML = '<p class="viz-placeholder">' + text + "</p>";
   }
 
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function rgba(arr, alphaOverride) {
+    if (!Array.isArray(arr) || arr.length < 4) return "rgba(255,255,255,1)";
+    const a = alphaOverride !== undefined ? alphaOverride : arr[3] / 255;
+    return "rgba(" + arr[0] + "," + arr[1] + "," + arr[2] + "," + a + ")";
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function fetchDoorConfig() {
+    return fetch("/art/door-visualization-config.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+  }
+
   function renderPolarHourChart(events) {
     if (!events.length) return empty("polar-chart", "No call events yet.");
     const el = document.getElementById("polar-chart");
     if (!el) return;
 
     const counts = new Array(24).fill(0);
-    events.forEach((d) => counts[d.getHours()]++);
+    events.forEach((evt) => counts[evt.date.getHours()]++);
     const maxCount = Math.max(...counts, 1);
 
     const size = 260;
@@ -123,8 +150,8 @@
     if (!el) return;
 
     const byDay = new Map();
-    events.forEach((d) => {
-      const key = localDateKey(d);
+    events.forEach((evt) => {
+      const key = localDateKey(evt.date);
       byDay.set(key, (byDay.get(key) || 0) + 1);
     });
 
@@ -204,8 +231,8 @@
 
     const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const byDate = new Map();
-    events.forEach((d) => {
-      const key = localDateKey(d);
+    events.forEach((evt) => {
+      const key = localDateKey(evt.date);
       byDate.set(key, (byDate.get(key) || 0) + 1);
     });
 
@@ -253,12 +280,185 @@
     el.innerHTML = rows;
   }
 
+  function renderDoorHistogram(events, cfg) {
+    const el = document.getElementById("weekday-chart");
+    if (!el) return;
+    if (!cfg || !Array.isArray(cfg.doors)) {
+      return empty("weekday-chart", "Door config missing.");
+    }
+
+    const byNumber = new Map();
+    events.forEach((evt) => {
+      byNumber.set(evt.fromNumber, (byNumber.get(evt.fromNumber) || 0) + 1);
+    });
+
+    const rows = cfg.doors
+      .map((d) => {
+        const raw = byNumber.get(d.fromNumber) || 0;
+        const count = Math.min(raw, 100);
+        const pct = (count / 100) * 100;
+        return (
+          '<div style="display:grid;grid-template-columns:58px 1fr 70px;gap:10px;align-items:center;margin:8px 0;">' +
+          '<div style="color:#cbd5e1;font-size:12px;">' +
+          d.name +
+          "</div>" +
+          '<div style="height:14px;background:#1f2937;border:1px solid #334155;border-radius:7px;overflow:hidden;">' +
+          '<div style="height:100%;width:' +
+          pct.toFixed(1) +
+          '%;background:#f59e0b;"></div></div>' +
+          '<div style="font-size:11px;color:#94a3b8;text-align:right;">' +
+          raw +
+          (raw > 100 ? " (cap 100)" : "") +
+          "</div>" +
+          "</div>"
+        );
+      })
+      .join("");
+    el.innerHTML = rows;
+  }
+
+  function renderDoorRipples(events, cfg) {
+    const mapWrap = document.getElementById("door-ripple-map");
+    if (!mapWrap) return;
+    if (!cfg || !Array.isArray(cfg.doors)) {
+      mapWrap.innerHTML = '<p class="viz-placeholder">Door config missing.</p>';
+      return;
+    }
+
+    const totalDays = Math.max(1, Number(cfg.totalDays || 60));
+    const startSize = Number(cfg.startSizeInPixels || 28);
+    const endSize = Number(cfg.endSizeInPixels || 210);
+    const startColor = cfg.startColorRGBA || [245, 158, 11, 255];
+    const endColor = cfg.endColorRGBA || [59, 130, 246, 20];
+
+    const now = Date.now();
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const thirtyMinMs = 30 * 60 * 1000;
+
+    const doorByNumber = new Map(cfg.doors.map((d) => [d.fromNumber, d]));
+
+    const ripples = [];
+    const flashRings = [];
+
+    events.forEach((evt) => {
+      const door = doorByNumber.get(evt.fromNumber);
+      if (!door) return;
+      const ageMs = now - evt.date.getTime();
+      if (ageMs < 0) return;
+      if (ageMs <= thirtyMinMs) {
+        flashRings.push({ door, ageMs });
+        return;
+      }
+
+      let ageDays = ageMs / msPerDay;
+      ageDays = clamp(ageDays, 1, totalDays);
+      if (ageDays > totalDays) return;
+      const t = (ageDays - 1) / (totalDays - 1 || 1);
+      const radius = lerp(startSize, endSize, t);
+      const alpha = lerp(startColor[3] / 255, endColor[3] / 255, t);
+      const color = rgba(
+        [
+          Math.round(lerp(startColor[0], endColor[0], t)),
+          Math.round(lerp(startColor[1], endColor[1], t)),
+          Math.round(lerp(startColor[2], endColor[2], t)),
+          255,
+        ],
+        alpha
+      );
+
+      ripples.push({
+        cx: door.x,
+        cy: door.y,
+        r: radius,
+        stroke: color,
+      });
+    });
+
+    const w = 900;
+    const h = 900;
+    const circles = ripples
+      .map(
+        (r) =>
+          '<circle cx="' +
+          r.cx +
+          '" cy="' +
+          r.cy +
+          '" r="' +
+          r.r.toFixed(1) +
+          '" fill="none" stroke="' +
+          r.stroke +
+          '" stroke-width="2"/>'
+      )
+      .join("");
+
+    const doorDots = cfg.doors
+      .map(
+        (d) =>
+          '<circle cx="' +
+          d.x +
+          '" cy="' +
+          d.y +
+          '" r="4" fill="#f8fafc"/>' +
+          '<text x="' +
+          (d.x + 8) +
+          '" y="' +
+          (d.y - 8) +
+          '" font-size="10" fill="#e2e8f0">' +
+          d.name +
+          "</text>"
+      )
+      .join("");
+
+    const flashAnim = flashRings
+      .map((f, i) => {
+        const proximity = 1 - clamp(f.ageMs / thirtyMinMs, 0, 1);
+        const dur = lerp(1.4, 0.18, proximity); // more recent => faster
+        return (
+          '<circle cx="' +
+          f.door.x +
+          '" cy="' +
+          f.door.y +
+          '" r="' +
+          startSize.toFixed(1) +
+          '" fill="none" stroke="#ff0000" stroke-width="3">' +
+          '<animate attributeName="stroke" values="#ff0000ff;#ffffffff;#ff0000ff" dur="' +
+          dur.toFixed(2) +
+          's" repeatCount="indefinite" />' +
+          '<animate attributeName="opacity" values="1;0.45;1" dur="' +
+          dur.toFixed(2) +
+          's" repeatCount="indefinite" />' +
+          "</circle>"
+        );
+      })
+      .join("");
+
+    mapWrap.innerHTML =
+      '<svg width="100%" viewBox="0 0 ' +
+      w +
+      " " +
+      h +
+      '" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">' +
+      '<image href="/art/ablon.png" x="0" y="0" width="' +
+      w +
+      '" height="' +
+      h +
+      '"/>' +
+      circles +
+      flashAnim +
+      doorDots +
+      "</svg>";
+  }
+
   function main() {
     setTimezoneLabel();
     const events = parseEvents();
     renderPolarHourChart(events);
     renderRolling60(events);
     renderWeekdayChart(events);
+    fetchDoorConfig().then((cfg) => {
+      renderDoorHistogram(events, cfg);
+      renderDoorRipples(events, cfg);
+    });
   }
 
   main();

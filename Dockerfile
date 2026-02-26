@@ -28,7 +28,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY src/ ./src/
 COPY art/ ./art/
 COPY schema/ ./schema/
-COPY ablon.png ./ablon.png
 
 # Expose the port
 EXPOSE 8080
