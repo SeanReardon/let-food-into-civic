@@ -407,6 +407,39 @@ def append_event(timestamp):
     save_events(events)
 
 
+def get_event_stats():
+    """Compute event statistics for dashboard cards."""
+    events = load_events()
+    now = datetime.now(TZ_DALLAS)
+    seven_days_ago = now - timedelta(days=7)
+    thirty_days_ago = now - timedelta(days=30)
+
+    parsed = []
+    for event in events:
+        ts_str = event.get("timestamp")
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(TZ_DALLAS)
+            parsed.append(ts)
+        except Exception as e:
+            logger.debug(f"Failed to parse timestamp for stats: {ts_str}, {e}")
+
+    parsed.sort(reverse=True)
+
+    total = len(parsed)
+    last_event = parsed[0] if parsed else None
+    last_7_days = sum(1 for ts in parsed if ts >= seven_days_ago)
+    last_30_days = sum(1 for ts in parsed if ts >= thirty_days_ago)
+
+    return {
+        "total": total,
+        "last_7_days": last_7_days,
+        "last_30_days": last_30_days,
+        "last_event": last_event.strftime("%b %-d, %-I:%M %p") if last_event else "Never",
+    }
+
+
 # =============================================================================
 # Chart Generation
 # =============================================================================
@@ -457,7 +490,9 @@ def generate_daily_histogram():
     day_labels = []
 
     for day_idx in range(days_back):
-        count = daily_counts.get(day_idx, 0)
+        # Draw oldest -> newest from left to right.
+        days_ago = days_back - 1 - day_idx
+        count = daily_counts.get(days_ago, 0)
         x = margin_left + day_idx * bar_width
         if max_count > 0:
             bar_height = (count / max_count) * (
@@ -471,36 +506,36 @@ def generate_daily_histogram():
             opacity = min(0.3 + (count / max_count) * 0.7, 1)
             bars.append(
                 f'<rect x="{x}" y="{y}" width="{bar_width - 1}" height="{bar_height}" '
-                f'fill="#b45309" opacity="{opacity}" rx="2"/>'
+                f'fill="#d97706" opacity="{opacity}" rx="2"/>'
             )
         else:
             bars.append(
                 f'<rect x="{x}" y="{chart_height - margin_bottom - 1}" width="{bar_width - 1}" height="1" '
-                f'fill="#e7e5e4" opacity="0.5" rx="2"/>'
+                f'fill="#334155" opacity="0.8" rx="2"/>'
             )
 
         if day_idx == 0:
+            start_date = today - timedelta(days=59)
             day_labels.append(
-                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">Today</text>'
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#94a3b8" text-anchor="middle">{start_date.strftime("%b %-d")}</text>'
             )
         elif day_idx == 29:
             day_labels.append(
-                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">30 days</text>'
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#94a3b8" text-anchor="middle">30d ago</text>'
             )
         elif day_idx == 59:
-            start_date = today - timedelta(days=59)
             day_labels.append(
-                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#a8a29e" text-anchor="middle">{start_date.strftime("%b")}</text>'
+                f'<text x="{x + bar_width / 2}" y="{chart_height - 10}" font-size="10" fill="#94a3b8" text-anchor="middle">Today</text>'
             )
 
     svg_content = [
         '<svg width="600" height="200" xmlns="http://www.w3.org/2000/svg">',
-        f'<text x="300" y="20" font-size="12" font-weight="600" fill="#1c1917" text-anchor="middle">Gate Unlocks - Last 60 Days</text>',
+        f'<text x="300" y="20" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="middle">Gate Unlocks - Last 60 Days</text>',
     ]
 
     if max_count > 0:
         y_axis_labels = [
-            f'<text x="70" y="{margin_top + i * (chart_height - margin_bottom - margin_top) / 4}" font-size="9" fill="#a8a29e" text-anchor="end">{int(max_count * (1 - i / 4))}</text>'
+            f'<text x="70" y="{margin_top + i * (chart_height - margin_bottom - margin_top) / 4}" font-size="9" fill="#94a3b8" text-anchor="end">{int(max_count * (1 - i / 4))}</text>'
             for i in range(5)
         ]
         svg_content.extend(y_axis_labels)
@@ -509,7 +544,7 @@ def generate_daily_histogram():
     svg_content.extend(day_labels)
     svg_content.extend(
         [
-            '<line x1="80" y1="170" x2="590" y2="170" stroke="#e7e5e4" stroke-width="1"/>',
+            '<line x1="80" y1="170" x2="590" y2="170" stroke="#334155" stroke-width="1"/>',
             "</svg>",
         ]
     )
@@ -579,7 +614,7 @@ def generate_polar_chart():
 
         svg_parts.append(
             f'<line x1="{start_x}" y1="{start_y}" x2="{start_x}" y2="{end_y}" '
-            f'stroke="#b45309" stroke-width="6" stroke-opacity="{opacity}" '
+            f'stroke="#d97706" stroke-width="6" stroke-opacity="{opacity}" '
             f'stroke-linecap="round" transform="rotate({base_angle_deg - 90} {center} {center})"/>'
         )
 
@@ -596,12 +631,12 @@ def generate_polar_chart():
             continue
 
         svg_parts.append(
-            f'<text x="{center}" y="{12 + hour // 6 * 50}" font-size="9" fill="#a8a29e" text-anchor="middle">{label_text}</text>'
+            f'<text x="{center}" y="{12 + hour // 6 * 50}" font-size="9" fill="#94a3b8" text-anchor="middle">{label_text}</text>'
         )
 
     svg_parts.extend(
         [
-            f'<text x="{center}" y="{center + 5}" font-size="10" font-weight="600" fill="#1c1917" text-anchor="middle">Unlock Times</text>',
+            f'<text x="{center}" y="{center + 5}" font-size="10" font-weight="600" fill="#e2e8f0" text-anchor="middle">Unlock Times</text>',
             "</svg>",
         ]
     )
@@ -1017,6 +1052,9 @@ def render_snooze_ui():
 
     linda_status = "Snoozed" if linda_snoozed else "Active"
     sean_status = "Snoozed" if sean_snoozed else "Active"
+    stats = get_event_stats()
+    daily_chart = generate_daily_histogram()
+    polar_chart = generate_polar_chart()
 
     return f'''
     <!DOCTYPE html>
@@ -1024,7 +1062,7 @@ def render_snooze_ui():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Snooze Notifications — Let Food Into Civic</title>
+        <title>let-food-into-civic</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1032,21 +1070,22 @@ def render_snooze_ui():
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
             :root {{
-                --bg: #fafaf9;
-                --bg-alt: #ffffff;
-                --text: #1c1917;
-                --text-secondary: #57534e;
-                --text-muted: #a8a29e;
-                --accent: #b45309;
-                --accent-light: #fef3c7;
-                --border: #e7e5e4;
+                --bg: #0f172a;
+                --bg-alt: #111827;
+                --surface: #1e293b;
+                --text: #e2e8f0;
+                --text-secondary: #cbd5e1;
+                --text-muted: #94a3b8;
+                --accent: #d97706;
+                --accent-light: #1f2937;
+                --border: #334155;
                 --success: #22c55e;
-                --success-light: #dcfce7;
+                --card-shadow: rgba(2, 6, 23, 0.45);
             }}
 
             body {{
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: var(--bg);
+                background: radial-gradient(circle at top, #111827 0%, var(--bg) 60%);
                 color: var(--text);
                 min-height: 100vh;
                 line-height: 1.6;
@@ -1054,7 +1093,7 @@ def render_snooze_ui():
             }}
 
             .container {{
-                max-width: 480px;
+                max-width: 760px;
                 margin: 0 auto;
                 padding: 48px 24px;
             }}
@@ -1074,6 +1113,7 @@ def render_snooze_ui():
                 font-size: 1.75rem;
                 font-weight: 600;
                 margin-bottom: 8px;
+                letter-spacing: -0.01em;
             }}
 
             .subtitle {{
@@ -1091,12 +1131,42 @@ def render_snooze_ui():
                 color: var(--text-secondary);
             }}
 
+            .stats-grid {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                margin-bottom: 24px;
+            }}
+
+            .stat-card {{
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 14px 16px;
+                box-shadow: 0 8px 24px var(--card-shadow);
+            }}
+
+            .stat-label {{
+                font-size: 0.78rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--text-muted);
+                margin-bottom: 6px;
+            }}
+
+            .stat-value {{
+                font-size: 1.35rem;
+                font-weight: 600;
+                color: var(--text);
+            }}
+
             .recipient-card {{
-                background: var(--bg-alt);
+                background: var(--surface);
                 border: 1px solid var(--border);
                 border-radius: 12px;
                 padding: 24px;
                 margin-bottom: 16px;
+                box-shadow: 0 8px 24px var(--card-shadow);
             }}
 
             .recipient-header {{
@@ -1192,6 +1262,11 @@ def render_snooze_ui():
             .chart-container {{
                 margin-bottom: 32px;
                 text-align: center;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 20px 12px 12px;
+                box-shadow: 0 8px 24px var(--card-shadow);
             }}
 
             .chart-container svg {{
@@ -1205,18 +1280,43 @@ def render_snooze_ui():
                 color: var(--text-muted);
                 font-size: 0.8rem;
             }}
+
+            @media (max-width: 600px) {{
+                .stats-grid {{
+                    grid-template-columns: 1fr;
+                }}
+            }}
         </style>
     </head>
     <body>
         <div class="container">
             <header>
                 <div class="logo">🏠</div>
-                <h1>Snooze Notifications</h1>
-                <p class="subtitle">Manage who gets notified</p>
+                <h1>let-food-into-civic</h1>
+                <p class="subtitle">Local notification controls</p>
             </header>
 
             <div class="info-box">
                 Snoozing skips the <strong>next gate unlock event only</strong>. After the gate unlocks, snooze automatically resets and notifications resume.
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Unlocks</div>
+                    <div class="stat-value">{stats["total"]}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Last 7 Days</div>
+                    <div class="stat-value">{stats["last_7_days"]}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Last 30 Days</div>
+                    <div class="stat-value">{stats["last_30_days"]}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Last Unlock</div>
+                    <div class="stat-value" style="font-size: 1rem;">{stats["last_event"]}</div>
+                </div>
             </div>
 
             <div class="recipient-card">
@@ -1258,10 +1358,10 @@ def render_snooze_ui():
             <div class="charts-section">
                 <h2>Analytics</h2>
                 <div class="chart-container">
-                    {generate_daily_histogram() or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
+                    {daily_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
                 </div>
                 <div class="chart-container">
-                    {generate_polar_chart() or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
+                    {polar_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No events to display</p>"}
                 </div>
             </div>
 
@@ -1286,7 +1386,7 @@ def render_public_landing_page():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Let Food Into Civic — Home Delivery Notifications by Contrived LLC</title>
+        <title>let-food-into-civic</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
