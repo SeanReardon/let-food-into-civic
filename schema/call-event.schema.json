@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contrived.com/let-food-into-civic/schema/call-event.schema.json/1.0.0",
+  "title": "Let Food Into Civic Event",
+  "description": "Structured event payload for call and snooze diagnostics.",
+  "type": "object",
+  "required": ["schemaVersion", "eventType", "timestamp"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Schema version (semver).",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": ["call-event", "snooze-event"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp in ISO8601 format."
+    },
+    "fromNumber": {
+      "type": "string",
+      "description": "Caller number for call events."
+    },
+    "snoozedUsersCsv": {
+      "type": "string",
+      "description": "Comma-separated list of users snoozed for this call (e.g., \"sean,linda\" or \"\")."
+    },
+    "snoozedUser": {
+      "type": "string",
+      "enum": ["sean", "linda"],
+      "description": "User whose SMS was snoozed for the next unlock."
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "eventType": { "const": "call-event" }
+      },
+      "required": ["fromNumber", "snoozedUsersCsv"],
+      "not": {
+        "required": ["snoozedUser"]
+      }
+    },
+    {
+      "properties": {
+        "eventType": { "const": "snooze-event" }
+      },
+      "required": ["snoozedUser"],
+      "not": {
+        "required": ["fromNumber"]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

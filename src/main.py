@@ -29,10 +29,12 @@ load_dotenv()
 DATA_DIR = Path("/app/data")
 LOGS_DIR = DATA_DIR / "logs"
 OPT_IN_FLOW_DIR = DATA_DIR / "opt-in-flow"
+EVENTS_DIR = DATA_DIR / "events"
 
 # Create directories if they don't exist
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 OPT_IN_FLOW_DIR.mkdir(parents=True, exist_ok=True)
+EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Configure logging with both console and file handlers
 log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -210,7 +212,7 @@ OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
 SNOOZE_FILE = DATA_DIR / "snooze.json"
 SMS_PAUSE_STATE_FILE = DATA_DIR / "sms-pause-state.json"
 
-# Events log file
+# Legacy events log file (kept as fallback for old data)
 EVENTS_FILE = DATA_DIR / "events.json"
 
 # Phone number to name mapping for snooze feature
@@ -412,6 +414,15 @@ def is_sms_paused_for_next_unlock(phone_number):
     return bool(state.get(name, {}).get("skip_next", False))
 
 
+def get_snoozed_users_csv_for_next_unlock() -> str:
+    """Return comma-separated snoozed users for the next unlock."""
+    state = load_sms_pause_state()
+    users = sorted(
+        user for user, payload in state.items() if bool(payload.get("skip_next", False))
+    )
+    return ",".join(users)
+
+
 # =============================================================================
 # Event Logging
 # =============================================================================
@@ -419,32 +430,46 @@ def is_sms_paused_for_next_unlock(phone_number):
 
 def load_events():
     """
-    Load gate unlock events from file.
+    Load gate unlock events from per-event files.
 
-    Returns list of event objects with 'timestamp' field.
-    Creates file with empty event list if it doesn't exist.
+    Returns list of objects with a 'timestamp' field.
+    Falls back to legacy events.json if no per-event files exist.
     """
+    events = []
+    call_event_files = sorted(EVENTS_DIR.glob("*-call-event.json"))
+    for event_file in call_event_files:
+        try:
+            with open(event_file, "r") as f:
+                payload = json.load(f)
+            ts = payload.get("timestamp")
+            if ts:
+                events.append({"timestamp": ts})
+        except Exception as e:
+            logger.error(f"Failed to load call event from {event_file}: {e}")
+
+    if events:
+        return events
+
+    # Legacy fallback for older event storage.
     if not EVENTS_FILE.exists():
-        save_events([])
         return []
 
     try:
         with open(EVENTS_FILE, "r") as f:
-            events = json.load(f)
-            # Validate events format
-            if not isinstance(events, list):
+            legacy_events = json.load(f)
+            if not isinstance(legacy_events, list):
                 logger.error(
-                    f"Invalid events format: expected array, got {type(events)}"
+                    f"Invalid legacy events format: expected array, got {type(legacy_events)}"
                 )
                 return []
-            return events
+            return legacy_events
     except Exception as e:
-        logger.error(f"Failed to load events: {e}")
+        logger.error(f"Failed to load legacy events: {e}")
         return []
 
 
 def save_events(events):
-    """Save events to file."""
+    """Save events to legacy array file (backwards compatibility)."""
     try:
         with open(EVENTS_FILE, "w") as f:
             json.dump(events, f, indent=2)
@@ -452,15 +477,83 @@ def save_events(events):
         logger.error(f"Failed to save events: {e}")
 
 
+def get_utc_now_iso8601() -> str:
+    """Get current UTC timestamp in ISO8601 with Z suffix."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
+
+
+def build_event_filename(timestamp: str, event_type: str) -> str:
+    """Build deterministic event filename in requested format."""
+    return f"{timestamp}-{event_type}.json"
+
+
+def write_structured_event(event_type: str, timestamp: str, payload: dict):
+    """Write an event object to /app/data/events/{timestamp}-{event_type}.json."""
+    event_data = {
+        "schemaVersion": "1.0.0",
+        "eventType": event_type,
+        "timestamp": timestamp,
+        **payload,
+    }
+    event_path = EVENTS_DIR / build_event_filename(timestamp, event_type)
+    try:
+        with open(event_path, "w") as f:
+            json.dump(event_data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to write structured event {event_path}: {e}")
+
+
+def record_call_event(
+    from_number: str, timestamp: str | None = None, snoozed_users_csv: str | None = None
+):
+    """Record a call event with UTC timestamp, caller number, and snoozed users."""
+    ts = timestamp or get_utc_now_iso8601()
+    snoozed = (
+        snoozed_users_csv
+        if snoozed_users_csv is not None
+        else get_snoozed_users_csv_for_next_unlock()
+    )
+    write_structured_event(
+        event_type="call-event",
+        timestamp=ts,
+        payload={
+            "fromNumber": from_number,
+            "snoozedUsersCsv": snoozed,
+        },
+    )
+
+
+def record_snooze_event(snoozed_user: str, timestamp: str | None = None):
+    """Record a snooze-enable event with UTC timestamp and user."""
+    ts = timestamp or get_utc_now_iso8601()
+    write_structured_event(
+        event_type="snooze-event",
+        timestamp=ts,
+        payload={"snoozedUser": snoozed_user},
+    )
+
+
 def append_event(timestamp):
     """
-    Add a new gate unlock event to the event log.
-
-    Events are stored in chronological order (newest at the end).
+    Add a new gate unlock event to structured event storage.
+    Also mirrors to legacy events.json for compatibility.
     """
-    events = load_events()
-    events.append({"timestamp": timestamp})
-    save_events(events)
+    record_call_event(from_number="unknown", timestamp=timestamp)
+
+    # Keep legacy file in sync while historical consumers migrate.
+    legacy_events = []
+    if EVENTS_FILE.exists():
+        try:
+            with open(EVENTS_FILE, "r") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, list):
+                    legacy_events = loaded
+        except Exception:
+            legacy_events = []
+    legacy_events.append({"timestamp": timestamp})
+    save_events(legacy_events)
 
 
 def parse_event_timestamps():
@@ -1024,9 +1117,9 @@ def handle_incoming_call():
         f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations"
     )
 
-    # Record gate unlock event for historical analysis
+    # Record gate unlock event for historical analysis.
     event_timestamp = datetime.utcnow().isoformat() + "Z"
-    append_event(event_timestamp)
+    record_call_event(from_number=caller, timestamp=event_timestamp)
 
     # Send SMS notifications asynchronously
     logger.info(f"📱 Initiating SMS notification to {len(NOTIFY_NUMBERS)} recipient(s)")
@@ -1187,7 +1280,12 @@ def render_snooze_ui():
     linda_status = "Skip next unlock" if linda_snoozed else "SMS enabled"
     sean_status = "Skip next unlock" if sean_snoozed else "SMS enabled"
     stats = get_event_stats()
-    hourly_chart = generate_hourly_unlock_histogram()
+    event_timestamps = [
+        event.get("timestamp")
+        for event in load_events()
+        if isinstance(event, dict) and event.get("timestamp")
+    ]
+    events_json = json.dumps(event_timestamps)
 
     return f'''
     <!DOCTYPE html>
@@ -1415,6 +1513,47 @@ def render_snooze_ui():
                 height: auto;
             }}
 
+            .chart-title {{
+                font-size: 0.95rem;
+                color: var(--text-secondary);
+                margin-bottom: 12px;
+            }}
+
+            .timezone-label {{
+                font-size: 0.84rem;
+                color: var(--text-muted);
+                text-align: right;
+                margin-bottom: 10px;
+            }}
+
+            .viz-placeholder {{
+                color: var(--text-muted);
+                font-size: 0.92rem;
+                padding: 14px 0;
+            }}
+
+            .map-section {{
+                background: var(--surface-2);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 16px;
+                box-shadow: 0 8px 24px var(--card-shadow);
+                margin-top: 6px;
+            }}
+
+            .map-section img {{
+                width: 100%;
+                border-radius: 10px;
+                border: 1px solid var(--border);
+                display: block;
+            }}
+
+            .map-caption {{
+                margin-top: 10px;
+                color: var(--text-muted);
+                font-size: 0.86rem;
+            }}
+
             footer {{
                 text-align: center;
                 margin-top: 40px;
@@ -1508,8 +1647,24 @@ def render_snooze_ui():
 
             <div class="charts-section">
                 <h2>Fun Team Diagnostics</h2>
+                <p class="timezone-label">Browser timezone: <span id="browser-timezone">loading...</span></p>
                 <div class="chart-container">
-                    {hourly_chart or "<p style='color: var(--text-muted); font-size: 0.9rem;'>No unlock events yet.</p>"}
+                    <div class="chart-title">Call Events by Local Hour (Polar)</div>
+                    <div id="polar-chart" class="viz-placeholder">Rendering chart...</div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">Rolling 60-Day Calls (Local Date)</div>
+                    <div id="daily60-chart" class="viz-placeholder">Rendering chart...</div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">Day-of-Week Average and Delta</div>
+                    <div id="weekday-chart" class="viz-placeholder">Rendering chart...</div>
+                </div>
+                <div class="map-section">
+                    <img src="/ablon.png" alt="Ablon map">
+                    <p class="map-caption">
+                        Future work: map caller numbers to XY coordinates and build a usage heatmap overlay.
+                    </p>
                 </div>
             </div>
 
@@ -1522,6 +1677,8 @@ def render_snooze_ui():
                 </p>
             </footer>
         </div>
+        <script id="event-timestamps" type="application/json">{events_json}</script>
+        <script src="/static/internal-dashboard-charts.js"></script>
     </body>
     </html>
     '''
@@ -1868,6 +2025,26 @@ def serve_avatar(filename):
     return send_from_directory(str(ART_DIR), filename)
 
 
+@app.route("/ablon.png", methods=["GET"])
+def serve_ablon():
+    """Serve the ablon base graphic used for future heatmap overlays."""
+    ablon_path = Path("/app/ablon.png")
+    if not ablon_path.exists():
+        abort(404)
+    return send_from_directory("/app", "ablon.png")
+
+
+@app.route("/schema/call-event.schema.json", methods=["GET"])
+@app.route("/schema/call-event.schema.json/1.0.0", methods=["GET"])
+def serve_call_event_schema():
+    """Serve the call-event schema (latest and versioned endpoint)."""
+    schema_dir = Path(__file__).resolve().parent.parent / "schema"
+    schema_file = schema_dir / "call-event.schema.json"
+    if not schema_file.exists():
+        abort(404)
+    return send_from_directory(str(schema_dir), "call-event.schema.json")
+
+
 @app.route("/", methods=["GET"])
 def index():
     """
@@ -2153,6 +2330,8 @@ def toggle_sms_pause():
         return jsonify({"error": 'Invalid user. Must be "linda" or "sean"'}), 400
 
     state = set_sms_pause_state(user, skip_next)
+    if skip_next:
+        record_snooze_event(snoozed_user=user)
 
     logger.info(
         f"{'⏭️' if skip_next else '✅'} {user.capitalize()} skip_next set to {skip_next}"
