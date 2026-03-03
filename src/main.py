@@ -69,7 +69,7 @@ TONE_DURATION_REPEATS = int(
     os.getenv("TONE_DURATION_REPEATS", "8")
 )  # ~2 seconds (8 x 250ms)
 PAUSE_DURATION = float(os.getenv("PAUSE_DURATION", "0.5"))  # seconds
-ITERATIONS = int(os.getenv("ITERATIONS", "6"))
+ITERATIONS = int(os.getenv("ITERATIONS", "3"))
 
 # SMS notification configuration
 # Comma-separated list of phone numbers to notify (accepts various formats, normalized to E.164)
@@ -1089,7 +1089,7 @@ def generate_unlock_texml() -> str:
     The call box expects:
     - Tone "5" held for ~2 seconds
     - Pause for 0.5 seconds
-    - Repeat 6 times
+    - Repeat 3 times by default (configurable via ITERATIONS env var)
 
     We use a pre-recorded DTMF audio file because TwiML's <Play digits>
     only supports short (~100ms) tones. The audio file contains a 2-second
