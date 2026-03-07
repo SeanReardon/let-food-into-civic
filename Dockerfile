@@ -13,7 +13,8 @@ RUN python -m venv /app/.venv && \
 
 # Production image
 # 2026-03-03: FROM python:3.13-slim
-FROM ghcr.io/contrived-com/python-3-13-slim-visa:2026-03-04_sha-8bc60ca_rt-let-food-into-civic-let-food-into-civic_tp-eb155bec_iss-20260304T020020Z
+# 2026-03-06: FROM ghcr.io/contrived-com/python-3-13-slim-visa:2026-03-04_sha-8bc60ca_rt-let-food-into-civic-let-food-into-civic_tp-eb155bec_iss-20260304T020020Z
+FROM ghcr.io/contrived-com/python-3-13-slim-visa:2026-03-06_sha-8bc60ca_rt-let-food-into-civic-let-food-into-civic_tp-2823763c_iss-20260306T194532Z
 
 WORKDIR /app
 

@@ -12,6 +12,9 @@ services:
     env_file:
       - .env  # Load secrets from .env file
     environment:
+      - VAULT_ADDR=${VAULT_ADDR}
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${VAULT_SECRET_ID}
       - LOG_LEVEL=INFO
       # DTMF tone configuration
       - UNLOCK_DIGIT=5
@@ -28,3 +31,13 @@ services:
       timeout: 3s
       retries: 3
       start_period: 10s
+    networks:
+      - default
+      - concordia
+
+networks:
+  default:
+    name: let-food-into-civic_default
+  concordia:
+    external: true
+    name: concordia
