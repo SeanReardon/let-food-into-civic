@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## What This Project Does
 
@@ -9,10 +9,11 @@
 ```
 src/
   main.py          # Flask app with all endpoints and business logic
-static/
-  dtmf5-2sec.wav   # Pre-recorded DTMF tone file
+  static/          # DTMF audio and internal dashboard assets
+art/               # Avatar and art assets served by the app
 scripts/claudia/   # Claudia agent metadata (PRD, progress)
-schemas/           # JSON schemas for Claudia
+schema/            # Public JSON schema routes served by the app
+schemas/           # Local JSON schema files used by the repo
 ```
 
 ## Key Technologies
@@ -44,21 +45,31 @@ docker compose up -d
 | `TELNYX_PHONE_NUMBER` | Yes | Toll-free number for SMS (E.164 format) |
 | `NOTIFY_NUMBERS` | No | Comma-separated phone numbers to notify |
 | `UNLOCK_DIGIT` | No | DTMF digit (default: "5") |
+| `TONE_DURATION_REPEATS` | No | 250 ms slices per tone burst (default: `8`) |
+| `PAUSE_DURATION` | No | Pause between bursts in seconds (default: `0.5`) |
+| `ITERATIONS` | No | Number of tone bursts per unlock sequence (default: `3`) |
 
 ## API Endpoints
 
+- `GET /` - Public landing page, or internal snooze dashboard on trusted networks
 - `POST /webhook/voice` - Telnyx voice webhook (answers calls, plays DTMF)
 - `POST /webhook/sms` - Telnyx SMS webhook (handles STOP/HELP/START)
 - `GET /health` - Container health check
+- `GET /status` - Simple runtime status page
 - `GET /sms-consent` - CTIA-compliant consent page for toll-free verification
+- `POST /internal/toggle-sms-pause` - Internal snooze toggle for next unlock
 - `POST /admin/test-sms` - Send test SMS
+- `GET /admin/call-logs` - Query recent Telnyx call activity
+- `POST /admin/buy-number` - Search for available Telnyx numbers
+- `POST /admin/buy-number/confirm` - Purchase a searched number
 
 ## Important Patterns
 
-1. **Phone number normalization**: All numbers are normalized to E.164 format on startup
-2. **Opt-in/opt-out**: CTIA-compliant system tracks consent in `/app/data/opt-in-flow/`
-3. **Async SMS**: Notifications are sent in background threads to avoid blocking webhook responses
-4. **Pre-recorded DTMF**: Uses audio file instead of `<Play digits>` because TwiML only supports short tones
+1. **Phone number normalization**: All configured numbers are normalized to E.164 on startup.
+2. **Opt-in/opt-out**: CTIA-compliant consent state is persisted under `/app/data/opt-in-flow/`.
+3. **Async SMS**: Notifications are sent in background threads so voice webhooks return immediately.
+4. **Pre-recorded DTMF**: The unlock flow plays `src/static/dtmf5-2sec.wav` instead of short `<Play digits>` tones.
+5. **Network-aware UI**: `/` serves the internal snooze dashboard only for requests marked as internal by nginx or local-network detection.
 
 ## Testing
 
@@ -72,7 +83,7 @@ curl -X POST http://localhost:8080/admin/test-sms
 
 ## Do Not Modify
 
-- `static/dtmf5-2sec.wav` - Pre-recorded DTMF tone file
+- `src/static/dtmf5-2sec.wav` - Pre-recorded DTMF tone file
 - Toll-free verification compliance text in `/sms-consent` without careful review
 
 ## Deploy Auth Responsibilities
@@ -82,4 +93,3 @@ curl -X POST http://localhost:8080/admin/test-sms
 - The deploy PAT from that path is used for both HTTPS git fetch and GHCR image pulls.
 - This repo continues to own only its application secret schema/policies in Vault.
 - Do not rely on persistent deployment creds in `~/.docker/config.json` or `~/.git-credentials`.
-
