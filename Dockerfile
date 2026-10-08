@@ -11,6 +11,12 @@ RUN python -m venv /app/.venv && \
     /app/.venv/bin/pip install --no-cache-dir --upgrade pip && \
     /app/.venv/bin/pip install --no-cache-dir -r requirements.txt
 
+# Credential-free PR validation. The trusted release still uses the Visa stage.
+FROM builder AS test
+COPY src/ ./src/
+COPY tests/ ./tests/
+RUN /app/.venv/bin/python -m unittest discover -s tests -v
+
 # Production image
 # 2026-03-03: FROM python:3.13-slim
 # 2026-03-06: FROM ghcr.io/contrived-com/python-3-13-slim-visa:2026-03-04_sha-8bc60ca_rt-let-food-into-civic-let-food-into-civic_tp-eb155bec_iss-20260304T020020Z

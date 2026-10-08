@@ -1095,12 +1095,18 @@ def generate_unlock_texml() -> str:
     only supports short (~100ms) tones. The audio file contains a 2-second
     DTMF "5" tone (770 Hz + 1336 Hz).
     """
+    from xml.sax.saxutils import escape
+
+    # A configured URL may contain query separators or XML metacharacters.
+    # Keep it as Play text without changing the URL the provider receives.
+    audio_url = escape(DTMF_AUDIO_URL)
+
     # Build the XML response using audio file for proper duration
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<Response>"]
 
     for i in range(ITERATIONS):
         # Play the DTMF tone audio file
-        xml_parts.append(f"    <Play>{DTMF_AUDIO_URL}</Play>")
+        xml_parts.append(f"    <Play>{audio_url}</Play>")
 
         # Add pause between iterations (skip pause after last iteration)
         if i < ITERATIONS - 1:
