@@ -8,7 +8,7 @@ class RelaySms:
     def __init__(self, base_url, api_key, account_id, opener=None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
-        self.account_id = account_id
+        self.account_id = account_id if account_id.startswith('sms:') else 'sms:' + account_id
         self.opener = opener or urllib.request.urlopen
 
     def request(self, path, body=None):

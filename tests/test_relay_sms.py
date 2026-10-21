@@ -13,12 +13,12 @@ class RelaySmsTests(unittest.TestCase):
         return RelaySms('http://relay', 'synthetic', 'civic', opener), calls
 
     def test_explicit_civic_sender_and_stable_correlation(self):
-        replies = [{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'sent'}}]
+        replies = [{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'sms:civic'}, {'message': {'delivery_status': 'sent'}}]
         client, calls = self.client(replies * 2)
         self.assertEqual(client.send('+15555550101', 'test', 'call-1'), 'sent')
         client.send('+15555550101', 'test', 'call-1')
-        self.assertEqual(calls[1][1]['account_id'], 'civic')
-        self.assertEqual(calls[2][1]['account_id'], 'civic')
+        self.assertEqual(calls[1][1]['account_id'], 'sms:civic')
+        self.assertEqual(calls[2][1]['account_id'], 'sms:civic')
         self.assertEqual(calls[2][1]['correlation_id'], calls[5][1]['correlation_id'])
 
     def test_relay_opt_out_does_not_create_thread_or_send(self):
@@ -33,7 +33,7 @@ class RelaySmsTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_failure_is_not_reported_as_success(self):
-        client, _ = self.client([{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'failed'}}])
+        client, _ = self.client([{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'sms:civic'}, {'message': {'delivery_status': 'failed'}}])
         with self.assertRaisesRegex(RuntimeError, 'did not accept'):
             client.send('+15555550101', 'test', 'call-1')
 
