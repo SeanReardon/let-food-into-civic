@@ -1094,41 +1094,20 @@ def send_notifications_async(caller: str, call_id: str = "unknown"):
 # TeXML Generation
 # =============================================================================
 
-# URL to the 2-second DTMF tone audio file
-DTMF_AUDIO_URL = os.getenv(
-    "DTMF_AUDIO_URL", "https://let-food-into-civic.contrived.com/static/dtmf5-2sec.wav"
-)
+# Versioned, fixed-duration asset: legacy loop/duration env settings cannot
+# accidentally turn the one-second sequence back into repeated playback.
+DTMF_AUDIO_URL = "https://let-food-into-civic.contrived.com/static/dtmf5-1sec-half.wav"
 
 
 def generate_unlock_texml() -> str:
-    """
-    Generate TeXML/TwiML response that plays DTMF tones to unlock the gate.
-
-    The call box expects:
-    - Tone "5" held for ~2 seconds
-    - Pause for 0.5 seconds
-    - Repeat 3 times by default (configurable via ITERATIONS env var)
-
-    We use a pre-recorded DTMF audio file because TwiML's <Play digits>
-    only supports short (~100ms) tones. The audio file contains a 2-second
-    DTMF "5" tone (770 Hz + 1336 Hz).
-    """
-    # Build the XML response using audio file for proper duration
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<Response>"]
-
-    for i in range(ITERATIONS):
-        # Play the DTMF tone audio file
-        xml_parts.append(f"    <Play>{DTMF_AUDIO_URL}</Play>")
-
-        # Add pause between iterations (skip pause after last iteration)
-        if i < ITERATIONS - 1:
-            xml_parts.append(f'    <Pause length="{PAUSE_DURATION}"/>')
-
-    # Hang up after we're done
-    xml_parts.append("    <Hangup/>")
-    xml_parts.append("</Response>")
-
-    return "\n".join(xml_parts)
+    """Play one second of half-amplitude DTMF 5, then explicitly end the call."""
+    return '\n'.join([
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<Response>',
+        f'    <Play loop="1" continueOnError="true">{DTMF_AUDIO_URL}</Play>',
+        '    <Hangup/>',
+        '</Response>',
+    ])
 
 
 # =============================================================================
@@ -1171,7 +1150,7 @@ def handle_incoming_call():
     logger.info(f"   To: {to_number}")
     logger.info(f"   Timestamp: {datetime.now().isoformat()}")
     logger.info(
-        f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations"
+        "🔓 Generating unlock sequence: one second of half-amplitude DTMF 5, then hangup"
     )
 
     # The gate response is independent of notification authentication, state and

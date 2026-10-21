@@ -137,3 +137,18 @@ there is no fallback to direct Telnyx or the full opt-out list. Local opt-in and
 snooze checks still apply. The lookup uses existing Relay API-key authentication; it does not grant SMS dispatch. Roll out the compatible Relay
 endpoint before this client. Existing call deduplication remains at-most-once;
 failed historical notifications are not automatically replayed.
+
+### Short gate tone (October 2026)
+
+The voice response plays `dtmf5-1sec-half.wav` once (one second total), then
+executes Telnyx `<Hangup/>`. The versioned asset preserves DTMF 5 (770 + 1336 Hz)
+at 0.5 sample amplitude, approximately -6.02 dB; this is not a guarantee of half
+perceived loudness at the call box. The original two-second WAV remains intact.
+Legacy `ITERATIONS`, `PAUSE_DURATION`, `TONE_DURATION_REPEATS`, `UNLOCK_DIGIT` and
+`DTMF_AUDIO_URL` settings do not change this fixed voice sequence. A playback
+error proceeds to Hangup via `continueOnError="true"`. No extra hangup API calls
+or audio retries are issued. SMS notification behavior is unchanged.
+
+Regenerate the derived asset with `python scripts/build_short_tone.py`. Offline
+checks verify duration, gain, fades, exact verb order and notification dedup.
+Actual gate detection and perceived volume require a user-initiated call.

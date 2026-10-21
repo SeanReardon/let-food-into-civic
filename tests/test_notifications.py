@@ -38,9 +38,31 @@ class NotificationsTests(unittest.TestCase):
     def test_startup_does_not_auto_opt_in_or_send(self):
         self.assertFalse(self.startup_created_consent)
 
-    def test_exact_accepted_gate_response(self):
-        digest = hashlib.sha256(self.app.generate_unlock_texml().encode()).hexdigest()
-        self.assertEqual(digest, '25d623f7b43e95cdab03e530b8bfcd94de9ca120efcfb617a453fa4a621ad28d')
+    def test_single_short_tone_then_explicit_hangup(self):
+        import xml.etree.ElementTree as ET
+        # Legacy production settings must not multiply the new one-second asset.
+        with patch.object(self.app, 'ITERATIONS', 6):
+            root = ET.fromstring(self.app.generate_unlock_texml())
+        self.assertEqual([v.tag for v in root], ['Play', 'Hangup'])
+        self.assertEqual(root[0].attrib, {'loop': '1', 'continueOnError': 'true'})
+        self.assertEqual(root[0].text, 'https://let-food-into-civic.contrived.com/static/dtmf5-1sec-half.wav')
+
+    def test_audio_duration_gain_and_original_preserved(self):
+        import struct
+        import wave
+        static = Path(__file__).resolve().parents[1] / 'src/static'
+        self.assertEqual(hashlib.sha256((static / 'dtmf5-2sec.wav').read_bytes()).hexdigest(),
+                         '17e3284bdb52f1bcdf51b35aa551ca70e835ce109f408e48d1a9fb24a061f5f0')
+        with wave.open(str(static / 'dtmf5-2sec.wav')) as f:
+            original = struct.unpack('<8000h', f.readframes(8000))
+        with wave.open(str(static / 'dtmf5-1sec-half.wav')) as f:
+            self.assertEqual((f.getnframes(), f.getframerate(), f.getnchannels(), f.getsampwidth()), (8000, 8000, 1, 2))
+            samples = struct.unpack('<8000h', f.readframes(8000))
+        # Every unfaded sample retains the original frequencies at half amplitude.
+        self.assertTrue(all(abs(new - old * 0.5) <= 0.5 for old, new in zip(original[:7920], samples[:7920])))
+        self.assertEqual(samples[0], 0)
+        self.assertEqual(samples[-1], 0)
+        self.assertLess(max(abs(x) for x in samples), 32767)
 
     def test_two_opted_in_recipients(self):
         self.app.send_sms_notifications('synthetic', datetime.now())
