@@ -13,7 +13,7 @@ class RelaySmsTests(unittest.TestCase):
         return RelaySms('http://relay', 'synthetic', 'civic', opener), calls
 
     def test_explicit_civic_sender_and_stable_correlation(self):
-        replies = [{'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'sent'}}]
+        replies = [{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'sent'}}]
         client, calls = self.client(replies * 2)
         self.assertEqual(client.send('+15555550101', 'test', 'call-1'), 'sent')
         client.send('+15555550101', 'test', 'call-1')
@@ -22,18 +22,18 @@ class RelaySmsTests(unittest.TestCase):
         self.assertEqual(calls[2][1]['correlation_id'], calls[5][1]['correlation_id'])
 
     def test_relay_opt_out_does_not_create_thread_or_send(self):
-        client, calls = self.client([{'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': True}])
+        client, calls = self.client([{'phone_number': '+15555550101', 'opted_out': True}])
         self.assertEqual(client.send('+15555550101', 'test', 'call-1'), 'opted_out')
         self.assertEqual(len(calls), 1)
 
     def test_wrong_sender_never_sends(self):
-        client, calls = self.client([{'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'frank'}])
+        client, calls = self.client([{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'frank'}])
         with self.assertRaisesRegex(RuntimeError, 'sender mismatch'):
             client.send('+15555550101', 'test', 'call-1')
         self.assertEqual(len(calls), 2)
 
     def test_failure_is_not_reported_as_success(self):
-        client, _ = self.client([{'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'failed'}}])
+        client, _ = self.client([{'phone_number': '+15555550101', 'opted_out': False}, {'id': 'thread', 'account_id': 'civic'}, {'message': {'delivery_status': 'failed'}}])
         with self.assertRaisesRegex(RuntimeError, 'did not accept'):
             client.send('+15555550101', 'test', 'call-1')
 
@@ -44,16 +44,16 @@ class RelaySmsTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
     def test_lookup_is_recipient_scoped(self):
-        client, calls = self.client([{'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': True}])
+        client, calls = self.client([{'phone_number': '+15555550101', 'opted_out': True}])
         client.send('+15555550101', 'test', 'call-1')
         self.assertEqual(calls, [('http://relay/sms/opt-outs/check', {
-            'account_id': 'civic', 'phone_number': '+15555550101',
+            'phone_number': '+15555550101',
         })])
 
     def test_untrusted_lookup_result_never_creates_thread_or_sends(self):
-        valid = {'account_id': 'civic', 'phone_number': '+15555550101', 'opted_out': False}
+        valid = {'phone_number': '+15555550101', 'opted_out': False}
         for reply in [None, {}, [], {**valid, 'opted_out': 'false'},
-                      {**valid, 'opted_out': 0}, {**valid, 'account_id': 'frank'},
+                      {**valid, 'opted_out': 0},
                       {**valid, 'phone_number': '+15555550102'}]:
             with self.subTest(reply=reply):
                 client, calls = self.client([reply])

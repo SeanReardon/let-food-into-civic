@@ -131,11 +131,9 @@ the stored URL; the Relay API key still comes exclusively from Vault.
 ### Recipient-scoped Relay consent lookup
 
 The Relay SMS client uses authenticated `POST /sms/opt-outs/check` with the
-configured account and one recipient. It validates the returned account,
-recipient and strict boolean before creating a thread or submitting a message.
+one recipient. It validates the returned recipient and strict boolean before creating a thread or submitting a message.
 Failures or mismatched/malformed responses stop that recipient's notification;
 there is no fallback to direct Telnyx or the full opt-out list. Local opt-in and
-snooze checks still apply. Relay requires an explicitly approved process-local
-lookup grant; this does not grant SMS dispatch. Roll out the compatible Relay
+snooze checks still apply. The lookup uses existing Relay API-key authentication; it does not grant SMS dispatch. Roll out the compatible Relay
 endpoint before this client. Existing call deduplication remains at-most-once;
 failed historical notifications are not automatically replayed.
