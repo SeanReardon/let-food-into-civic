@@ -1,6 +1,7 @@
 """Executed via pinned SSH stdin by provision_relay_config.py; no service restart."""
 import json
 import os
+import resource
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -8,6 +9,7 @@ import urllib.request
 
 
 def provision(values):
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     assert os.geteuid() == 0, 'root_required'
     row = json.loads(subprocess.check_output(['docker', 'inspect', 'concordia-vault']))[0]
     ip = row['NetworkSettings']['Networks']['concordia']['IPAddress']

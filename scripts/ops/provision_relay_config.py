@@ -13,6 +13,8 @@ import resource
 import subprocess
 import sys
 import urllib.request
+import warnings
+import os
 from pathlib import Path
 
 
@@ -21,14 +23,23 @@ def main():
     parser.add_argument('--image', type=Path, default=Path('/mnt/ablonstorage/Backup-onlogic-closet/onlogic-closet_TS1TMTE662T-I_H463900001_2026-10-02T18:48:12Z.img'))
     parser.add_argument('--reader-packages', default='/home/seanr/Downloads/confidant-latitude-setup/reader-venv/lib/python3.13/site-packages')
     parser.add_argument('--known-hosts', default='/home/seanr/dev/homelab-infra/latitude/ssh_known_hosts')
+    parser.add_argument('--check', action='store_true', help='Check local prerequisites only; no prompts or provisioning')
     args = parser.parse_args()
-    if not sys.stdin.isatty():
+    if not args.check and (not sys.stdin.isatty() or not sys.stdout.isatty()):
         raise RuntimeError('Run in your private terminal; never paste tokens in chat')
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     sys.path.insert(0, args.reader_packages)
     from dissect.extfs import ExtFS
     from dissect.util.stream import RangeStream
     from dotenv import dotenv_values
+    required = [args.image, Path(args.known_hosts), Path.home() / '.ssh/id_ed25519',
+                Path(__file__).with_name('provision_relay_config_remote.py')]
+    if not all(path.is_file() and os.access(path, os.R_OK) for path in required):
+        raise RuntimeError('Local prerequisite missing or unreadable')
+    if args.check:
+        print('Local prerequisite checks passed: reader dependencies, recovery image, SSH key, host pin, and helper.')
+        print('No credentials read, network requests, prompts, or provisioning performed.')
+        return
     with args.image.open('rb') as source:
         fs = ExtFS(RangeStream(source, 2000896 * 512, 1932718080 * 512))
         raw = fs.get('/home/let-food-into-civic/.env').open().read().decode()
@@ -49,13 +60,16 @@ def main():
         public_key=public_key)
     print('Configure Civic SMS through Relay in Vault and install protected Civic bootstrap only.')
     print('No service restart, provider configuration change, message or call will occur.')
+    # Fail closed if the terminal cannot disable echo; never use getpass's
+    # fallback that could display the token.
+    warnings.simplefilter('error', getpass.GetPassWarning)
     values['admin'] = getpass.getpass('Vault administrator token (hidden, not saved): ')
     assert values['admin'], 'token_required'
     remote = 'VALUES = ' + repr(values) + '\n' + Path(__file__).with_name('provision_relay_config_remote.py').read_text()
     ssh = ['ssh', '-F', '/dev/null', '-i', str(Path.home() / '.ssh/id_ed25519'),
            '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
            '-o', 'UserKnownHostsFile=' + args.known_hosts, '-o', 'ConnectTimeout=15',
-           'debian@152.236.4.55', 'sudo', '-n', 'python3', '-']
+           'debian@152.236.4.55', 'sudo', '-n', 'python3', '-I', '-']
     result = subprocess.run(ssh, input=remote, text=True)
     raise SystemExit(result.returncode)
 

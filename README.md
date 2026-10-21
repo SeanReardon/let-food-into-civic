@@ -92,8 +92,15 @@ To provision only the scoped Vault config and protected bootstrap, run in a
 private terminal from this repository:
 
 ```sh
-venv/bin/python scripts/ops/provision_relay_config.py
+/home/seanr/dev/let-food-into-civic/scripts/ops/setup-civic-vault.sh
 ```
+
+After SSH to `seanr@seanr-super-server`, run the command directly in your
+interactive terminal. Only the existing Vault administrator token is requested;
+all other credentials are recovered automatically. `--check` validates local
+prerequisites without reading credentials or making network requests. The wrapper
+rejects piped input/output and credential arguments, disables shell tracing/core
+dumps, and the helper refuses to prompt if terminal echo cannot be disabled.
 
 The helper prompts invisibly for an existing Vault administrator token, reads
 only Civic's recovered configuration, confirms the Relay sender, preserves the
