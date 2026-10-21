@@ -28,8 +28,15 @@ class RelaySms:
         if not call_id or call_id == 'unknown':
             raise ValueError('A provider call ID is required for Relay notifications')
         # Respect Relay's durable opt-outs even if its global enforcement is disabled.
-        opted_out = self.request('/sms/opt-outs')['opt_outs']
-        if any(row.get('phone_number') == recipient for row in opted_out):
+        check = self.request('/sms/opt-outs/check', {
+            'account_id': self.account_id, 'phone_number': recipient,
+        })
+        if (not isinstance(check, dict)
+                or check.get('account_id') != self.account_id
+                or check.get('phone_number') != recipient
+                or type(check.get('opted_out')) is not bool):
+            raise RuntimeError('Relay opt-out status unavailable or mismatched')
+        if check['opted_out']:
             return 'opted_out'
         thread = self.request('/threads', {
             'surface': 'sms', 'account_id': self.account_id,
