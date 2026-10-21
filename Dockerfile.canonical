@@ -1,0 +1,8 @@
+# Bounded application update on the already accepted visa image. The rollout
+# verifies this local parent tag resolves to the accepted immutable image ID.
+FROM let-food-into-civic:latitude-accepted
+USER root
+RUN /app/.venv/bin/pip install --no-cache-dir cryptography==46.0.7
+COPY src/ /app/src/
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "src.bootstrap"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--worker-class", "gevent", "src.main:app"]

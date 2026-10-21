@@ -10,3 +10,6 @@ telnyx>=2.0.0
 
 # Environment variable loading
 python-dotenv>=1.0.0
+
+# Authenticate Telnyx notification triggers
+cryptography>=44,<47

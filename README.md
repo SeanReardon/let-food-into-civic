@@ -59,3 +59,60 @@ Common optional variables:
 ## Related docs
 
 - See [AGENTS.md](AGENTS.md) for agent-oriented repository guidance.
+
+## Canonical Latitude SMS restoration
+
+The prepared application supports `SMS_TRANSPORT=relay`, selecting the existing
+Relay `civic` SMS account explicitly. Relay keeps inbound SMS ownership; the
+Civic SMS route is disabled in this mode. The original notification text,
+recipient opt-in records, snooze behavior, and six-tone unlock XML are retained.
+Relay opt-outs are checked before sending, and correlation IDs deduplicate sends
+per provider call and recipient. Telnyx's toll-free STOP/START blocking remains
+provider-owned; Relay's optional global auto-reply setting is not changed.
+
+Relay notification triggers require a fresh Telnyx Ed25519 signature and a
+provider call ID. Unsigned probes return the gate XML without sending messages.
+A durable call claim prevents retries from consuming a snooze and then texting.
+Dispatch is at-most-once: a process crash after claiming a call can lose that
+notification. Relay acceptance is logged separately from handset delivery.
+Notification authentication, persistence, or transport errors do not change the
+unlock XML. Canonical nginx retains the fixed response as its upstream-error
+fallback; it must not be switched until candidate configuration is verified.
+
+Configuration comes from `secret/let-food-into-civic/config` when
+`CIVIC_VAULT_CONFIG_PATH=secret/data/let-food-into-civic/config` is set. The
+`src.bootstrap` entrypoint reads a protected root-owned bootstrap file specified
+by `CIVIC_VAULT_BOOTSTRAP_FILE`, then invokes the existing visa entrypoint.
+The app fails startup if configured Vault retrieval fails rather than silently
+using stale credentials. No application secrets are written to `.env`.
+`CIVIC_AUTO_OPT_IN` now defaults to false: starting/restarting never enrolls or
+texts a new recipient. Existing consent records are preserved.
+
+To provision only the scoped Vault config and protected bootstrap, run in a
+private terminal from this repository:
+
+```sh
+venv/bin/python scripts/ops/provision_relay_config.py
+```
+
+The helper prompts invisibly for an existing Vault administrator token, reads
+only Civic's recovered configuration, confirms the Relay sender, preserves the
+existing AppRole policies, grants the additional config read, and verifies it.
+It does not deploy, restart services, change provider settings, send messages, or
+make calls. Administrator material stays in memory and encrypted SSH stdin;
+only the intended AppRole bootstrap is saved with root:2004 / 0440 custody.
+
+`Dockerfile.canonical` builds on the accepted local visa image. Before building,
+verify its parent ID against infra's Civic acceptance receipt. Publish reviewed
+source first; admit the new image through the canonical lifecycle and repin its
+envelope/fingerprint. Do not use legacy Compose/updaters or rerun migration
+helpers. See `homelab-infra/latitude/leaf-lifecycle/civic/README.md` for host wiring.
+
+Offline checks (synthetic credentials and mocked transport, no sends):
+
+```sh
+venv/bin/python -m unittest discover -s tests -v
+```
+
+A production send/call test requires Sean's separate approval. Configuration,
+health, and offline tests alone do not establish handset delivery.
