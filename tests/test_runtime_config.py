@@ -33,3 +33,19 @@ class RuntimeConfigTests(unittest.TestCase):
 
     def test_no_vault_path_does_not_connect(self):
         load_vault_config({}, lambda *args, **kwargs: self.fail('unexpected network'))
+
+    def test_canonical_internal_route_override_keeps_vault_key(self):
+        replies = [{'auth': {'client_token': 'synthetic-token'}}, {'data': {'data': {
+            'sms_transport': 'relay', 'notify_numbers': '+15555550100',
+            'telnyx_phone_number': '+15555550101', 'telnyx_public_key': 'public',
+            'relay_api_url': 'https://old-host', 'relay_api_key': 'vault-key',
+            'relay_account_id': 'civic',
+        }}}, {}]
+        def opener(req, timeout):
+            return io.BytesIO(json.dumps(replies.pop(0)).encode())
+        env = dict(VAULT_ADDR='http://vault', VAULT_ROLE_ID='role', VAULT_SECRET_ID='secret',
+                   CIVIC_VAULT_CONFIG_PATH='secret/data/let-food-into-civic/config',
+                   CIVIC_RELAY_API_URL='http://relay-api:8000')
+        load_vault_config(env, opener)
+        self.assertEqual(env['RELAY_API_URL'], 'http://relay-api:8000')
+        self.assertEqual(env['RELAY_API_KEY'], 'vault-key')

@@ -52,6 +52,10 @@ def load_vault_config(environ=None, opener=urllib.request.urlopen):
         # environment credentials when a configured Vault read fails.
         values = {target: str(config.get(field, '')) for field, target in FIELDS.items()}
         values['SMS_TRANSPORT'] = transport
+        # Host wiring can pin the canonical internal route independently of
+        # credential custody. The API key still comes exclusively from Vault.
+        if transport == 'relay' and env.get('CIVIC_RELAY_API_URL'):
+            values['RELAY_API_URL'] = env['CIVIC_RELAY_API_URL']
         env.update(values)
     except Exception:
         raise RuntimeError('Civic Vault configuration unavailable; details withheld') from None

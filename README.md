@@ -123,3 +123,7 @@ venv/bin/python -m unittest discover -s tests -v
 
 A production send/call test requires Sean's separate approval. Configuration,
 health, and offline tests alone do not establish handset delivery.
+
+Canonical host wiring sets `CIVIC_RELAY_API_URL=http://relay-api:8000` on the
+private shared network. This non-secret endpoint override takes precedence over
+the stored URL; the Relay API key still comes exclusively from Vault.
