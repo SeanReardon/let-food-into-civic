@@ -38,5 +38,8 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
+# Load protected bootstrap before the visa entrypoint and gunicorn.
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "src.bootstrap"]
+
 # Run with gunicorn for production
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--worker-class", "gevent", "src.main:app"]
