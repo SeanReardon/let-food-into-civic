@@ -22,11 +22,16 @@ from dotenv import load_dotenv
 from flask import Flask, Response, request, jsonify, redirect, send_from_directory, abort
 import telnyx
 
+from src.runtime_config import load_vault_config
+from src.relay_sms import RelaySms
+from src.voice_notifications import claim_call, verified_webhook
+
 # Load environment variables from .env file
 load_dotenv()
+load_vault_config()
 
 # Data directory paths
-DATA_DIR = Path("/app/data")
+DATA_DIR = Path(os.getenv("CIVIC_DATA_DIR", "/app/data"))
 LOGS_DIR = DATA_DIR / "logs"
 OPT_IN_FLOW_DIR = DATA_DIR / "opt-in-flow"
 EVENTS_DIR = DATA_DIR / "events"
@@ -204,6 +209,12 @@ TELNYX_PHONE_NUMBER = (
 
 # Initialize Telnyx client
 telnyx_client = telnyx.Telnyx(api_key=TELNYX_API_KEY) if TELNYX_API_KEY else None
+
+SMS_TRANSPORT = os.getenv("SMS_TRANSPORT", "telnyx")
+relay_sms = (
+    RelaySms(os.environ["RELAY_API_URL"], os.environ["RELAY_API_KEY"], os.environ["RELAY_ACCOUNT_ID"])
+    if SMS_TRANSPORT == "relay" else None
+)
 
 # Opt-in tracking file
 OPT_IN_FILE = OPT_IN_FLOW_DIR / "opt-ins.json"
@@ -969,7 +980,7 @@ if NOTIFY_NUMBERS_RAW:
             logger.debug(f"   {normalized} (already normalized)")
 
 # Initialize on startup
-if NOTIFY_NUMBERS:
+if NOTIFY_NUMBERS and os.getenv("CIVIC_AUTO_OPT_IN", "false").lower() == "true":
     initialize_opt_ins()
 
 
@@ -978,7 +989,7 @@ if NOTIFY_NUMBERS:
 # =============================================================================
 
 
-def send_sms_notifications(caller: str, timestamp: datetime):
+def send_sms_notifications(caller: str, timestamp: datetime, call_id: str = "unknown"):
     """
     Send SMS notifications to configured phone numbers.
 
@@ -1006,7 +1017,7 @@ def send_sms_notifications(caller: str, timestamp: datetime):
             )
             return
 
-        if not telnyx_client:
+        if not relay_sms and not telnyx_client:
             logger.warning("⚠️  Telnyx client not initialized (API key missing)")
             return
 
@@ -1044,12 +1055,19 @@ def send_sms_notifications(caller: str, timestamp: datetime):
 
             try:
                 logger.info(f"📤 Attempting to send SMS to {phone_number}...")
-                telnyx_client.messages.send(
-                    from_=TELNYX_PHONE_NUMBER,
-                    to=phone_number,
-                    text=message,
-                )
-                logger.info(f"✅ SMS successfully sent to {phone_number}")
+                if relay_sms:
+                    status = relay_sms.send(phone_number, message, call_id)
+                    if status == "opted_out":
+                        skipped_count += 1
+                        continue
+                    logger.info("SMS accepted by Relay (status=%s)", status)
+                else:
+                    telnyx_client.messages.send(
+                        from_=TELNYX_PHONE_NUMBER,
+                        to=phone_number,
+                        text=message,
+                    )
+                    logger.info("SMS accepted by Telnyx")
                 success_count += 1
             except Exception as e:
                 logger.error(
@@ -1064,10 +1082,10 @@ def send_sms_notifications(caller: str, timestamp: datetime):
         )
 
 
-def send_notifications_async(caller: str):
+def send_notifications_async(caller: str, call_id: str = "unknown"):
     """Send notifications in a background thread."""
     thread = threading.Thread(
-        target=send_sms_notifications, args=(caller, datetime.now()), daemon=True
+        target=send_sms_notifications, args=(caller, datetime.now(), call_id), daemon=True
     )
     thread.start()
 
@@ -1076,41 +1094,20 @@ def send_notifications_async(caller: str):
 # TeXML Generation
 # =============================================================================
 
-# URL to the 2-second DTMF tone audio file
-DTMF_AUDIO_URL = os.getenv(
-    "DTMF_AUDIO_URL", "https://let-food-into-civic.contrived.com/static/dtmf5-2sec.wav"
-)
+# Versioned, fixed-duration asset: legacy loop/duration env settings cannot
+# accidentally turn the one-second sequence back into repeated playback.
+DTMF_AUDIO_URL = "https://let-food-into-civic.contrived.com/static/dtmf5-1sec-half.wav"
 
 
 def generate_unlock_texml() -> str:
-    """
-    Generate TeXML/TwiML response that plays DTMF tones to unlock the gate.
-
-    The call box expects:
-    - Tone "5" held for ~2 seconds
-    - Pause for 0.5 seconds
-    - Repeat 3 times by default (configurable via ITERATIONS env var)
-
-    We use a pre-recorded DTMF audio file because TwiML's <Play digits>
-    only supports short (~100ms) tones. The audio file contains a 2-second
-    DTMF "5" tone (770 Hz + 1336 Hz).
-    """
-    # Build the XML response using audio file for proper duration
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<Response>"]
-
-    for i in range(ITERATIONS):
-        # Play the DTMF tone audio file
-        xml_parts.append(f"    <Play>{DTMF_AUDIO_URL}</Play>")
-
-        # Add pause between iterations (skip pause after last iteration)
-        if i < ITERATIONS - 1:
-            xml_parts.append(f'    <Pause length="{PAUSE_DURATION}"/>')
-
-    # Hang up after we're done
-    xml_parts.append("    <Hangup/>")
-    xml_parts.append("</Response>")
-
-    return "\n".join(xml_parts)
+    """Play one second of half-amplitude DTMF 5, then explicitly end the call."""
+    return '\n'.join([
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<Response>',
+        f'    <Play loop="1" continueOnError="true">{DTMF_AUDIO_URL}</Play>',
+        '    <Hangup/>',
+        '</Response>',
+    ])
 
 
 # =============================================================================
@@ -1126,6 +1123,8 @@ def health_check():
         "service": "let-food-into-civic",
         "notifications_configured": len(NOTIFY_NUMBERS) > 0,
         "telnyx_configured": bool(TELNYX_API_KEY),
+        "sms_transport": SMS_TRANSPORT,
+        "sms_transport_configured": bool(relay_sms or telnyx_client),
     }, 200
 
 
@@ -1138,6 +1137,7 @@ def handle_incoming_call():
     We respond with TeXML instructions to play DTMF tones,
     and send SMS notifications.
     """
+    request.get_data(cache=True)
     # Log the incoming call with full details
     caller = request.values.get("From", request.values.get("from", "unknown"))
     to_number = request.values.get("To", request.values.get("to", "unknown"))
@@ -1150,16 +1150,28 @@ def handle_incoming_call():
     logger.info(f"   To: {to_number}")
     logger.info(f"   Timestamp: {datetime.now().isoformat()}")
     logger.info(
-        f"🔓 Generating unlock sequence: DTMF tone '{UNLOCK_DIGIT}' x {ITERATIONS} iterations"
+        "🔓 Generating unlock sequence: one second of half-amplitude DTMF 5, then hangup"
     )
 
-    # Record gate unlock event for historical analysis.
-    event_timestamp = datetime.utcnow().isoformat() + "Z"
-    record_call_event(from_number=caller, timestamp=event_timestamp)
-
-    # Send SMS notifications asynchronously
-    logger.info(f"📱 Initiating SMS notification to {len(NOTIFY_NUMBERS)} recipient(s)")
-    send_notifications_async(caller)
+    # The gate response is independent of notification authentication, state and
+    # transport. Unsigned probes still receive the same XML but cannot send SMS.
+    try:
+        notify = True
+        if relay_sms:
+            notify = (
+                request.method == "POST"
+                and verified_webhook(os.getenv("TELNYX_PUBLIC_KEY", ""),
+                                     request.headers, request.get_data())
+                and claim_call(DATA_DIR / "notified-calls.sqlite", call_id)
+            )
+        if notify:
+            event_timestamp = datetime.utcnow().isoformat() + "Z"
+            record_call_event(from_number=caller, timestamp=event_timestamp)
+            send_notifications_async(caller, call_id)
+        else:
+            logger.info("Notification suppressed: unsigned, stale, duplicate or incomplete call")
+    except Exception:
+        logger.error("Notification dispatch unavailable; gate response preserved")
 
     # Generate and return the TeXML response
     texml = generate_unlock_texml()
@@ -1181,6 +1193,9 @@ def handle_incoming_sms():
     NOTE: Telnyx sends webhooks for ALL message events (inbound, outbound,
     delivery confirmations, etc.). We only process inbound messages.
     """
+    if relay_sms:
+        return jsonify({"error": "SMS ingress is owned by Relay"}), 404
+
     # Log all incoming requests for debugging
     logger.info("=" * 60)
     logger.info(f"📱 SMS WEBHOOK RECEIVED")
