@@ -4,6 +4,7 @@ gunicorn>=21.0.0
 
 # For production WSGI server
 gevent>=24.0.0
+packaging>=24,<27
 
 # Telnyx SDK for SMS and API calls
 telnyx>=2.0.0
