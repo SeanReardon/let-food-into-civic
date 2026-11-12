@@ -41,15 +41,9 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 OPT_IN_FLOW_DIR.mkdir(parents=True, exist_ok=True)
 EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Configure logging with both console and file handlers
+# The container log driver owns retention. Avoid a second, unbounded file copy.
 log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 handlers = [logging.StreamHandler(sys.stdout)]
-
-# Add file handler for persistent logs
-log_file = LOGS_DIR / "app.log"
-file_handler = logging.FileHandler(log_file)
-file_handler.setFormatter(logging.Formatter(log_format))
-handlers.append(file_handler)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),

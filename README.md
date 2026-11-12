@@ -74,9 +74,11 @@ not a fresh-host setup procedure.
 - Durable claims prevent repeat dispatch for a provider call. Dispatch is
   at-most-once, not guaranteed delivery; a crash after claim can lose a message.
   Relay acceptance and handset delivery are distinct evidence.
-- Persistent data is `/app/data`; logs are `/app/data/logs`. Infra binds these
-  to the service's private home directories. Cache is reserved and currently
-  unused; it needs no application mount.
+- Persistent data is `/app/data`. Application logs go to stdout, retained by
+  Docker's bounded log driver (two 10-MiB files). Read them through the scoped
+  log command. The private `/app/data/logs` bind preserves historical files;
+  the application no longer appends a duplicate unbounded `app.log`. Cache is
+  reserved and currently unused; it needs no application mount.
 
 ## Interfaces and safe checks
 
