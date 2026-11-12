@@ -46,6 +46,7 @@ services:
       TRANSPONDER_COLLECTOR_CANDIDATES: http://arecibo-api:8080,https://arecibo.contrived.com
       TRANSPONDER_ENVIRONMENT: prod
       TRANSPONDER_SERVICE_NAME: let-food-into-civic
+      TRANSPONDER_REPOSITORY: SeanReardon/let-food-into-civic
       TRANSPONDER_INSTANCE_ID: let-food-into-civic
       TRANSPONDER_IMAGE_REF: ${LFIC_IMAGE:?Set the admitted immutable image reference}
       TRANSPONDER_COMMIT_SHA: ${RELEASE_REVISION:?Set the admitted source revision}
