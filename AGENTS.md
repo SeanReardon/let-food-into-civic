@@ -1,95 +1,69 @@
-# AGENTS.md
+# lfic — let-food-into-civic
 
-## What This Project Does
+## Purpose and behavior
 
-**let-food-into-civic** is a home automation service that automatically unlocks an apartment call box for food deliveries. When a delivery person dials the Telnyx phone number from the call box, the service answers and plays DTMF tone "5" repeatedly to unlock the gate, then sends SMS notifications to household members.
+lfic handles apartment call-box deliveries. A voice request returns TeXML that
+plays `dtmf5-1sec-half.wav` once, then hangs up. Authenticated fresh Telnyx
+requests with a provider call ID may trigger household SMS through Relay's
+`civic` sender. Relay owns SMS ingress, transport and provider sessions.
 
-## Project Structure
+Consent, snooze state, event history and durable notification claims live under
+`/app/data`. Notification dispatch is at-most-once: retries do not replay a claimed
+call, and a crash after claiming can lose its notification. Voice responses must
+remain available when notification authentication, persistence or transport fails.
+Startup must not automatically enroll or message recipients.
 
-```
-src/
-  main.py          # Flask app with all endpoints and business logic
-  static/          # DTMF audio and internal dashboard assets
-art/               # Avatar and art assets served by the app
-scripts/claudia/   # Claudia agent metadata (PRD, progress)
-schema/            # Public JSON schema routes served by the app
-schemas/           # Local JSON schema files used by the repo
-```
+## Source and infrastructure
 
-## Key Technologies
+This repo owns application code, Dockerfiles, desired Compose configuration,
+image CI and the runtime Vault secret schema. Homelab-infra owns host placement,
+accounts, nginx/TLS, lifecycle/update units, protected bootstrap delivery and
+updater credentials.
 
-- **Flask** - Web framework handling webhooks
-- **Telnyx** - Telephony provider for voice calls and SMS
-- **TeXML/TwiML** - XML-based response format for call handling
-- **Docker** - Container deployment
+Use the infra checkout named by the task, defaulting to `~/dev/homelab-infra`.
+Read its AGENTS, README adoption status and `service/let-food-into-civic.md`.
+For alignment work, follow `docs/service-alignment.md` and the updated
+`contrived-dev-make-service` skill. Candidate source is not proof of live adoption.
+Compare local HEAD, published main and installed revision before diagnosing drift.
 
-## Running the Project
+Dallas uses `let-food-into-civic-runtime.service` and
+`civic-release-update.service`/`.timer`. Homelab's shared runtime prepares this
+repo's Compose at the signed image's exact source revision and systemd owns its
+foreground process. Compose has no independent restart policy and never pulls
+at startup. Check the infra service record for installed adoption status before
+operating it; do not start a second owner beside an existing deployment.
 
-```bash
-# Local development
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # Edit with your Telnyx credentials
-python -m src.main
+## Credentials and state
 
-# Docker
-docker compose up -d
-```
+Application settings come from Vault `secret/let-food-into-civic/config`.
+`CIVIC_VAULT_CONFIG_PATH=secret/data/let-food-into-civic/config` enables that read.
+The installed bootstrap exception uses a protected root-owned JSON file selected
+by `CIVIC_VAULT_BOOTSTRAP_FILE`; `src.bootstrap` supplies its AppRole pair before
+invoking the visa entrypoint. Preserve that delivery until deliberately migrated.
+`CIVIC_RELAY_API_URL` may override the nonsecret internal route; the key remains
+in Vault. A configured Vault read failure fails startup without stale fallback.
 
-## Environment Variables
+Updater auth is infra-owned at `secret/homelab/deploy-auth/let-food-into-civic`,
+separate from application credentials. No persistent git/Docker credential files
+or application business secrets belong in source or copied service-home env files.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `TELNYX_LET_FOOD_INTO_CIVIC_KEY` | Yes | Telnyx API key |
-| `TELNYX_PHONE_NUMBER` | Yes | Toll-free number for SMS (E.164 format) |
-| `NOTIFY_NUMBERS` | No | Comma-separated phone numbers to notify |
-| `UNLOCK_DIGIT` | No | DTMF digit (default: "5") |
-| `TONE_DURATION_REPEATS` | No | 250 ms slices per tone burst (default: `8`) |
-| `PAUSE_DURATION` | No | Pause between bursts in seconds (default: `0.5`) |
-| `ITERATIONS` | No | Number of tone bursts per unlock sequence (default: `3`) |
+## Code and validation
 
-## API Endpoints
+- `src/main.py`: Flask routes, voice response, state and notification coordination.
+- `src/bootstrap.py`, `src/runtime_config.py`: private bootstrap and Vault loading.
+- `src/relay_sms.py`, `src/voice_notifications.py`: Relay access, signature checks
+  and durable call deduplication.
+- `Dockerfile`, `.github/workflows/build_and_push.yml`: current image producer;
+  main publishes signed immutable digests for infra adoption.
+- `tests/`: synthetic credentials, disposable state and mocked provider calls.
 
-- `GET /` - Public landing page, or internal snooze dashboard on trusted networks
-- `POST /webhook/voice` - Telnyx voice webhook (answers calls, plays DTMF)
-- `POST /webhook/sms` - Telnyx SMS webhook (handles STOP/HELP/START)
-- `GET /health` - Container health check
-- `GET /status` - Simple runtime status page
-- `GET /sms-consent` - CTIA-compliant consent page for toll-free verification
-- `POST /internal/toggle-sms-pause` - Internal snooze toggle for next unlock
-- `POST /admin/test-sms` - Send test SMS
-- `GET /admin/call-logs` - Query recent Telnyx call activity
-- `POST /admin/buy-number` - Search for available Telnyx numbers
-- `POST /admin/buy-number/confirm` - Purchase a searched number
+Run `python -m unittest discover -s tests -v` in an environment with requirements
+installed. Use the Flask test client/mocked transport for webhook tests. Production
+`/health` is a safe readiness probe; it does not prove handset delivery or that a
+physical gate opened. Calls, SMS, provider mutations and gate actions are not
+implicit deployment checks. Public `/status`/admin/internal routes are deliberately
+blocked by infra; SMS ingress belongs to Relay.
 
-## Important Patterns
-
-1. **Phone number normalization**: All configured numbers are normalized to E.164 on startup.
-2. **Opt-in/opt-out**: CTIA-compliant consent state is persisted under `/app/data/opt-in-flow/`.
-3. **Async SMS**: Notifications are sent in background threads so voice webhooks return immediately.
-4. **Pre-recorded DTMF**: The unlock flow plays `src/static/dtmf5-2sec.wav` instead of short `<Play digits>` tones.
-5. **Network-aware UI**: `/` serves the internal snooze dashboard only for requests marked as internal by nginx or local-network detection.
-
-## Testing
-
-```bash
-# Test webhook locally
-curl -X POST http://localhost:8080/webhook/voice -d "From=+15551234567"
-
-# Test SMS
-curl -X POST http://localhost:8080/admin/test-sms
-```
-
-## Do Not Modify
-
-- `src/static/dtmf5-2sec.wav` - Pre-recorded DTMF tone file
-- Toll-free verification compliance text in `/sms-consent` without careful review
-
-## Deploy Auth Responsibilities
-
-- Deployment auth is infra-owned in `homelab-infra` and read at runtime from Vault.
-- Canonical deploy-auth path for this repo: `secret/homelab/deploy-auth/let-food-into-civic`.
-- The deploy PAT from that path is used for both HTTPS git fetch and GHCR image pulls.
-- This repo continues to own only its application secret schema/policies in Vault.
-- Do not rely on persistent deployment creds in `~/.docker/config.json` or `~/.git-credentials`.
+Preserve `src/static/dtmf5-2sec.wav`, the original audio asset. The derived
+one-second asset and consent copy should change only for an explicit product task.
+Legacy tone-loop environment settings do not alter the current fixed voice sequence.

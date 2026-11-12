@@ -1,43 +1,75 @@
-version: "3.8"
+# Application runtime definition. Homelab supplies verified release metadata.
+# LFIC_IMAGE must be the admitted immutable reference, not a moving tag.
+name: let-food-into-civic
 
 services:
   let-food-into-civic:
-    image: ghcr.io/seanreardon/let-food-into-civic:latest
+    image: ${LFIC_IMAGE:?Set the admitted immutable image reference}
     container_name: let-food-into-civic
-    restart: unless-stopped
+    user: "2004:2004"
+    restart: "no"
+    pull_policy: never
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
     ports:
-      - "127.0.0.1:8042:8080"  # Exposed on localhost:8042, nginx will reverse proxy to this
+      - "127.0.0.1:8042:8080"
     volumes:
-      - ./data:/app/data  # Persist logs, opt-in records, snooze state, and event history
-    env_file:
-      - .env  # Load secrets from .env file
+      - type: bind
+        source: /home/let-food-into-civic/data
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /home/let-food-into-civic/logs
+        target: /app/data/logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/let-food-into-civic/vault-bootstrap.json
+        target: /run/secrets/civic-vault.json
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
-      - VAULT_ADDR=${VAULT_ADDR}
-      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
-      - VAULT_SECRET_ID=${VAULT_SECRET_ID}
-      - LOG_LEVEL=INFO
-      # DTMF tone configuration
-      - UNLOCK_DIGIT=5
-      - TONE_DURATION_REPEATS=8   # 8 x 250ms = ~2 seconds of tone
-      - PAUSE_DURATION=0.5        # 0.5 second pause between tones
-      - ITERATIONS=6              # Repeat 6 times
-      # Telnyx configuration (secrets in .env file):
-      # - TELNYX_LET_FOOD_INTO_CIVIC_KEY=your_api_key
-      # - TELNYX_PHONE_NUMBER=+1XXXXXXXXXX
-      # - NOTIFY_NUMBERS=+1XXXXXXXXXX,+1YYYYYYYYYY
+      VAULT_ADDR: http://concordia-vault:8200
+      CIVIC_VAULT_CONFIG_PATH: secret/data/let-food-into-civic/config
+      CIVIC_VAULT_BOOTSTRAP_FILE: /run/secrets/civic-vault.json
+      CIVIC_RELAY_API_URL: http://relay-api:8000
+      CIVIC_AUTO_OPT_IN: "false"
+      TRANSPONDER_VAULT_PATH: arecibo/config
+      TRANSPONDER_API_KEY_FIELD: arecibo_api_keys
+      TRANSPONDER_COLLECTOR_CANDIDATES: http://arecibo-api:8080,https://arecibo.contrived.com
+      TRANSPONDER_ENVIRONMENT: production
+      TRANSPONDER_SERVICE_NAME: let-food-into-civic
+      TRANSPONDER_INSTANCE_ID: let-food-into-civic
+      TRANSPONDER_IMAGE_REF: ${LFIC_IMAGE:?Set the admitted immutable image reference}
+      TRANSPONDER_COMMIT_SHA: ${RELEASE_REVISION:?Set the admitted source revision}
+      TRANSPONDER_WORKFLOW_RUN_URL: ${RELEASE_WORKFLOW_RUN_URL:?Set the successful image workflow URL}
+      LOG_LEVEL: INFO
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 3s
       retries: 3
-      start_period: 10s
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "2"
     networks:
-      - default
+      - lfic
       - concordia
 
 networks:
-  default:
-    name: let-food-into-civic_default
+  lfic:
+    external: true
+    name: let-food-into-civic
   concordia:
     external: true
     name: concordia
